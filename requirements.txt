@@ -1,4 +1,4 @@
-easyocr
 numpy
 opencv-python
 PySide6
+scipy
