@@ -66,6 +66,7 @@ class MainWindow(QMainWindow):
 
         detect_btn = QPushButton("Detect Text Regions")
         detect_btn.clicked.connect(self.detect_current)
+        self.image_view.detect.connect(self.detect_current)
 
         apply_btn = QPushButton("Apply Rules")
         apply_btn.clicked.connect(self.apply_rules_current)

@@ -14,11 +14,13 @@ class ImageView(QGraphicsView):
     drawing: bool
     start: Optional[QPointF]
     temp: Optional[object]
+
     selection_finished = Signal(QRect)
     pos_str = Signal(str)
     sel_str = Signal(str)
     zoom_changed = Signal(str)
     save = Signal()
+    detect = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -118,5 +120,8 @@ class ImageView(QGraphicsView):
             return
         if event.matches(QKeySequence.StandardKey.Save):
             self.save.emit()
+            return
+        if event.key() == Qt.Key.Key_Enter:
+            self.detect.emit()
             return
         super().keyPressEvent(event)
