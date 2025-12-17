@@ -8,24 +8,25 @@ from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeyEvent, Qt
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidgetItem,
     QMainWindow,
     QPushButton,
-    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from methods.deskew import auto_deskew
+from methods.detector import detect_image, detect_selection
 from models.box import Box
-from ocr.detector import detect_text_regions, refine_box_from_selection
-from ocr_cropper.app_state import AppState
+from models.state import AppState
 from ui.box_item import BoxItem, sort_reading_order
 from ui.file_list import FileList
 from ui.image_view import ImageView
-from utils.deskew import auto_deskew
-from utils.rules import apply_rules
 
 
 class MainWindow(QMainWindow):
@@ -49,27 +50,9 @@ class MainWindow(QMainWindow):
 
         self.image_view = ImageView()
 
-        self.w_min = QSpinBox()
-        self.w_max = QSpinBox()
-        self.h_min = QSpinBox()
-        self.h_max = QSpinBox()
-        self.r_min = QSpinBox()
-        self.r_max = QSpinBox()
-
-        for sb in (self.w_min, self.w_max, self.h_min, self.h_max):
-            sb.setRange(0, 20000)
-
-        self.w_min.setValue(30)
-        self.w_max.setValue(300)
-        self.h_min.setValue(30)
-        self.h_max.setValue(300)
-
         detect_btn = QPushButton("Detect Text Regions")
         detect_btn.clicked.connect(self.detect_current)
         self.image_view.detect.connect(self.detect_current)
-
-        apply_btn = QPushButton("Apply Rules")
-        apply_btn.clicked.connect(self.apply_rules_current)
 
         self.export_dir = QLineEdit(str(Path.cwd()))
         self.export_dir.setReadOnly(True)
@@ -78,14 +61,18 @@ class MainWindow(QMainWindow):
         self.image_view.save.connect(self.export_current)
 
         right_layout = QVBoxLayout()
-        right_layout.addWidget(QLabel("Width Range"))
-        right_layout.addWidget(self.w_min)
-        right_layout.addWidget(self.w_max)
-        right_layout.addWidget(QLabel("Height Range"))
-        right_layout.addWidget(self.h_min)
-        right_layout.addWidget(self.h_max)
+
+        self.rule_table = QTableWidget()
+        self.rule_table.setColumnCount(4)
+        self.rule_table.setHorizontalHeaderLabels(["w_min", "w_max", "h_min", "h_max"])
+        self.rule_table.setRowCount(5)
+        for row in range(5):
+            for col in range(4):
+                self.rule_table.setItem(row, col, QTableWidgetItem(""))
+        self.rule_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+        right_layout.addWidget(self.rule_table)
         right_layout.addWidget(detect_btn)
-        right_layout.addWidget(apply_btn)
         right_layout.addStretch()
         right_layout.addWidget(self.export_dir)
         right_layout.addWidget(export_btn)
@@ -164,10 +151,10 @@ class MainWindow(QMainWindow):
             return
 
         rect_box = Box(rect.left(), rect.top(), rect.width(), rect.height())
-        if rect.width() < self.w_min.value() or rect.height() < self.h_min.value():
+        if rect.width() < 10 or rect.height() < 10:
             return
 
-        box = refine_box_from_selection(Image.open(self.state.current), rect_box)
+        box = detect_selection(Image.open(self.state.current), rect_box)
         if box:
             box_item = BoxItem(box)
             self.image_view.scene().addItem(box_item)
@@ -177,29 +164,18 @@ class MainWindow(QMainWindow):
         if not self.state.current:
             return
 
-        w_range = (self.w_min.value(), self.w_max.value())
-        h_range = (self.h_min.value(), self.h_max.value())
-
-        boxes = detect_text_regions(self.state.current, w_range, h_range)
+        boxes: list[Box] = []
+        for row in range(self.rule_table.rowCount()):
+            w_min = int(self.rule_table.item(row, 0).text() or 0)
+            w_max = int(self.rule_table.item(row, 1).text() or 0)
+            h_min = int(self.rule_table.item(row, 2).text() or 0)
+            h_max = int(self.rule_table.item(row, 3).text() or 0)
+            if w_min < w_max and h_min < h_max and max(w_max, h_max) > 0:
+                boxes.extend(detect_image(self.state.current, W_RANGE=(w_min, w_max), H_RANGE=(h_min, h_max)))
         self.state.images[self.state.current] = boxes
 
         self.image_view.load_image(self.state.current)
         self.image_view.load_boxes(boxes)
-
-    def apply_rules_current(self) -> None:
-        if not self.state.current:
-            return
-
-        boxes = [item.box for item in self.image_view.box_items]
-
-        apply_rules(
-            boxes,
-            w=(self.w_min.value(), self.w_max.value()),
-            h=(self.h_min.value(), self.h_max.value()),
-        )
-
-        for item in self.image_view.box_items:
-            item.update_style()
 
     def export_current(self) -> None:
         if not self.state.current:

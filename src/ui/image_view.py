@@ -1,18 +1,20 @@
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QKeyEvent, QKeySequence, QMouseEvent, QPixmap, QWheelEvent
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtGui import QBrush, QKeyEvent, QKeySequence, QMouseEvent, QPainter, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QRubberBand
 
 from models.box import Box
 from ui.box_item import BoxItem
 
+ZOOM_FACTOR = 1.2
+
 
 class ImageView(QGraphicsView):
     box_items: list[BoxItem]
     drawing: bool
-    start: Optional[QPointF]
+    start: Optional[QPoint]
     temp: Optional[object]
 
     selection_finished = Signal(QRect)
@@ -31,7 +33,7 @@ class ImageView(QGraphicsView):
         self.temp = None
 
         self._rubber = QRubberBand(QRubberBand.Shape.Rectangle, self)
-        self._origin: Optional[QPoint] = None
+        self._origin_scene: Optional[QPoint] = None
         self._select_mode = False
         self._zoom = 1.0
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
@@ -57,44 +59,74 @@ class ImageView(QGraphicsView):
                 self.box_items.remove(item)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        pos = self.mapToScene(event.pos())
-        self.sel_str.emit(f"Sel: ({int(pos.x())}, {int(pos.y())})")
-        if (event.button() == Qt.MouseButton.LeftButton) or (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+        if event.button() == Qt.MouseButton.LeftButton or event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             self._select_mode = True
-            self._origin = event.pos()
-            self._rubber.setGeometry(QRect(self._origin, QSize()))
+            self._origin_scene = self.mapToScene(event.pos())
+
+            origin_view = event.pos()
+            self._rubber.setGeometry(QRect(origin_view, QSize()))
             self._rubber.show()
+            self.sel_str.emit(
+                f"Select: ({int(self._origin_scene.x())}, {int(self._origin_scene.y())}), " f"Size: (0, 0)"
+            )
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        pos = self.mapToScene(event.pos())
-        self.pos_str.emit(f"Pos: ({int(pos.x())}, {int(pos.y())})")
-        if self._select_mode and self._origin:
-            rect = QRect(self._origin, event.pos()).normalized()
+        scene_pos = self.mapToScene(event.pos())
+        self.pos_str.emit(f"Pos: ({int(scene_pos.x())}, {int(scene_pos.y())})")
+        if self._select_mode and self._origin_scene is not None:
+            x0, y0 = self._origin_scene.x(), self._origin_scene.y()
+            x1, y1 = scene_pos.x(), scene_pos.y()
+            w, h = abs(x1 - x0), abs(y1 - y0)
+
+            origin_view = self.mapFromScene(self._origin_scene)
+            rect = QRect(origin_view, event.pos()).normalized()
             self._rubber.setGeometry(rect)
+            self.sel_str.emit(f"Select: ({int(min(x0, x1))}, {int(min(y0, y1))}), " f"Size: ({int(w)}, {int(h)})")
             return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        self.sel_str.emit("Sel: (-, -)")
-        if self._select_mode and self._origin:
-            self._rubber.hide()
-            rect = QRect(self._origin, event.pos()).normalized()
-            scene_rect = self.mapToScene(rect).boundingRect().toRect()
+        self.sel_str.emit("Select: (-, -), Size: (-, -)")
+        if self._select_mode and self._origin_scene is not None:
+            x0, y0 = self._origin_scene.x(), self._origin_scene.y()
+            end_scene = self.mapToScene(event.pos()).toPoint()
+            x1, y1 = end_scene.x(), end_scene.y()
+            w, h = abs(x1 - x0), abs(y1 - y0)
 
-            # shift + click and move to select
+            is_click = w < 5 and h < 5
+            if is_click:
+                self.click(end_scene)
+
+            self._rubber.hide()
+            origin_view = self.mapFromScene(self._origin_scene)
+            rect = QRect(origin_view, event.pos()).normalized()
+            scene_rect = self.mapToScene(rect).boundingRect().toRect()
+            # shift + drag: selection
             if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                 for item in self.scene().items(scene_rect):
                     if isinstance(item, BoxItem):
                         item.setSelected(True)
-            # click and move to draw
+            # left drag: draw
             elif event.button() == Qt.MouseButton.LeftButton:
                 self.selection_finished.emit(scene_rect)
-
-            self._origin = None
+            self._origin_scene = None
             self._select_mode = False
+            return
         super().mouseReleaseEvent(event)
+
+    def click(self, scene_pos: QPoint) -> None:
+        candidates: list[tuple[float, BoxItem]] = []
+        for item in self.scene().items(scene_pos):
+            if isinstance(item, BoxItem):
+                rect = item.sceneBoundingRect()
+                if rect.contains(scene_pos):
+                    area = rect.width() * rect.height()
+                    candidates.append((area, item))
+        if candidates:
+            _, smallest = min(candidates, key=lambda x: x[0])
+            smallest.setSelected(not smallest.isSelected())
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         delta = event.angleDelta().y()
@@ -105,7 +137,7 @@ class ImageView(QGraphicsView):
             return
         # ctrl + wheel to zoom
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            factor = 1.2 if delta > 0 else 1 / 1.2
+            factor = ZOOM_FACTOR if delta > 0 else 1 / ZOOM_FACTOR
             self.scale(factor, factor)
             self._zoom *= factor
             self.zoom_changed.emit(f"Zoom: {(self._zoom * 100):.2f}%")
@@ -125,3 +157,7 @@ class ImageView(QGraphicsView):
             self.detect.emit()
             return
         super().keyPressEvent(event)
+
+    def drawBackground(self, painter: QPainter, rect: QRect) -> None:
+        painter.fillRect(rect, QBrush(Qt.GlobalColor.lightGray))
+        super().drawBackground(painter, rect)

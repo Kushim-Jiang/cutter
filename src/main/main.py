@@ -8,7 +8,6 @@ sys.path.append(str(REPO_ROOT))
 
 from ui.main_window import MainWindow  # noqa: E402
 
-
 app = QApplication(sys.argv)
 win = MainWindow()
 win.show()

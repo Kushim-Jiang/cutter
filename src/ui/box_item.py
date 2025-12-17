@@ -31,9 +31,7 @@ class BoxItem(QGraphicsRectItem):
         self.update_style()
 
     def update_style(self) -> None:
-        if self.box.locked:
-            color = QColor(0, 120, 255)
-        elif self.box.selected:
+        if self.box.selected:
             color = QColor(0, 200, 0)
         else:
             color = QColor(200, 0, 0)
@@ -96,10 +94,6 @@ class BoxItem(QGraphicsRectItem):
         self.box.h = int(r.height())
         self.resizing = False
         super().mouseReleaseEvent(event)
-
-    def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        self.box.locked = not self.box.locked
-        self.update_style()
 
 
 def sort_reading_order(box_items: list[BoxItem], image_width: int) -> list[BoxItem]:

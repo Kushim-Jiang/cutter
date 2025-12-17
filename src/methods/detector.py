@@ -57,7 +57,7 @@ def has_horizontal_white_gap(
     return max_gap / h >= min_gap_ratio
 
 
-def detect_text_regions(
+def detect_image(
     image_path: Path,
     W_RANGE: Optional[tuple[int, int]] = None,
     H_RANGE: Optional[tuple[int, int]] = None,
@@ -177,7 +177,7 @@ def detect_text_regions(
     return final
 
 
-def refine_box_from_selection(image: Image.Image, rect: Box) -> Box | None:
+def detect_selection(image: Image.Image, rect: Box) -> Box | None:
     x0 = rect.x
     y0 = rect.y
     x1 = rect.x + rect.w
@@ -200,6 +200,5 @@ def refine_box_from_selection(image: Image.Image, rect: Box) -> Box | None:
         w=max_x - min_x + 1 + BORDER * 2,
         h=max_y - min_y + 1 + BORDER * 2,
         selected=True,
-        locked=False,
         source="manual",
     )
