@@ -95,11 +95,14 @@ class MainWindow(QMainWindow):
 
         self.status_pos = QLabel()
         self.status_sel = QLabel()
+        self.status_zoom = QLabel()
         self.statusBar().addPermanentWidget(self.status_sel)
         self.statusBar().addPermanentWidget(self.status_pos)
+        self.statusBar().addPermanentWidget(self.status_zoom)
         self.image_view.pos_str.connect(self.status_pos.setText)
         self.image_view.sel_str.connect(self.status_sel.setText)
         self.image_view.selection_finished.connect(self.on_selection_finished)
+        self.image_view.zoom_changed.connect(self.status_zoom.setText)
 
     def open_images(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, "Open Images", "", "Images (*.png *.jpg *.jpeg)")

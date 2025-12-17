@@ -29,6 +29,8 @@ class ImageView(QGraphicsView):
 
         self._rubber = QRubberBand(QRubberBand.Shape.Rectangle, self)
         self._origin: Optional[QPoint] = None
+        self._zoom = 1.0
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
 
     def load_image(self, path: Path) -> None:
         self.scene().clear()
@@ -77,3 +79,10 @@ class ImageView(QGraphicsView):
             self._origin = None
         super().mouseReleaseEvent(event)
 
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            factor = 1.2 if event.angleDelta().y() > 0 else 1 / 1.2
+            self.scale(factor, factor)
+            self._zoom *= factor
+            self.zoom_changed.emit(f"Zoom: {(self._zoom * 100):.2f}%")
+        super().wheelEvent(event)
