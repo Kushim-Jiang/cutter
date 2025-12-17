@@ -73,6 +73,7 @@ class MainWindow(QMainWindow):
         self.export_dir.setReadOnly(True)
         export_btn = QPushButton("Export Selected Regions")
         export_btn.clicked.connect(self.export_current)
+        self.image_view.save.connect(self.export_current)
 
         right_layout = QVBoxLayout()
         right_layout.addWidget(QLabel("Width Range"))
@@ -134,7 +135,8 @@ class MainWindow(QMainWindow):
         temp_path = path.with_suffix(".deskew.png")
         (temp_path.parent.parent / "deskew").mkdir(parents=True, exist_ok=True)
         deskewed_path = temp_path.parent.parent / "deskew" / temp_path.name
-        self.export_dir.setText(str(deskewed_path.parent))
+        self.export_dir.setText(str(deskewed_path.parent.parent / "result"))
+
         cv2.imwrite(str(deskewed_path), img)
         self.image_view.load_image(deskewed_path)
 
