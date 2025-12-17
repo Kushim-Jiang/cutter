@@ -1,9 +1,13 @@
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Optional
+
+import numpy as np
+from PIL import Image, ImageFilter
+from scipy.spatial import KDTree
+
 from models.box import Box
 
-from PIL import Image, ImageFilter
-import numpy as np
+BORDER: int = 5
 
 
 def adaptive_threshold(image: Image.Image, block_size: int = 15, c: int = 10) -> Image.Image:
@@ -14,123 +18,177 @@ def adaptive_threshold(image: Image.Image, block_size: int = 15, c: int = 10) ->
     return Image.fromarray(thresh_np).convert("1")
 
 
-def detect_text_regions(image_path: Path) -> List[Box]:
+def has_horizontal_white_gap(
+    image: Image.Image,
+    box: Box,
+    *,
+    white_ratio_thresh: float = 0.03,
+    min_gap_ratio: float = 0.12,
+    margin_ratio: float = 0.15,
+) -> bool:
+    # crop area
+    crop = image.crop((box.x, box.y, box.x + box.w, box.y + box.h)).convert("L")
+
+    arr = np.array(crop)
+    h, w = arr.shape
+
+    binary = arr < 128
+    black_ratio_per_row = binary.sum(axis=1) / w
+
+    top = int(h * margin_ratio)
+    bottom = int(h * (1 - margin_ratio))
+
+    gap_start = None
+    max_gap = 0
+
+    for y in range(top, bottom):
+        if black_ratio_per_row[y] <= white_ratio_thresh:
+            if gap_start is None:
+                gap_start = y
+        else:
+            if gap_start is not None:
+                gap_height = y - gap_start
+                max_gap = max(max_gap, gap_height)
+                gap_start = None
+
+    if gap_start is not None:
+        max_gap = max(max_gap, bottom - gap_start)
+
+    return max_gap / h >= min_gap_ratio
+
+
+def detect_text_regions(
+    image_path: Path,
+    W_RANGE: Optional[tuple[int, int]] = None,
+    H_RANGE: Optional[tuple[int, int]] = None,
+) -> list[Box]:
+    IOU_THRESH: float = 0.7
+
+    # Step 1. binarization and connected component analysis
     image = Image.open(image_path).convert("L")
     bw = image.point(lambda x: 0 if x < 128 else 255, "1")
-    bw_np = np.array(bw, dtype=np.uint8)  # 0 or 255
+    pixels = bw.load()
+    width, height = bw.size
 
-    height, width = bw_np.shape
-
-    visited = np.zeros((height, width), dtype=bool)
-    boxes = []
+    visited: set[tuple[int, int]] = set()
+    components: list[Box] = []
 
     def neighbors(x: int, y: int):
-        for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-            if 0 <= nx < width and 0 <= ny < height:
-                yield nx, ny
+        for nx in (x - 1, x, x + 1):
+            for ny in (y - 1, y, y + 1):
+                if 0 <= nx < width and 0 <= ny < height:
+                    yield nx, ny
 
-    def bfs(start_x: int, start_y: int):
-        queue = [(start_x, start_y)]
-        visited[start_y, start_x] = True
+    def bfs(sx: int, sy: int) -> Box:
+        stack = [(sx, sy)]
+        visited.add((sx, sy))
+        min_x = max_x = sx
+        min_y = max_y = sy
 
-        min_x, max_x = start_x, start_x
-        min_y, max_y = start_y, start_y
-
-        while queue:
-            cx, cy = queue.pop(0)
-            for nx, ny in neighbors(cx, cy):
-                if bw_np[ny, nx] == 0 and not visited[ny, nx]:
-                    visited[ny, nx] = True
-                    queue.append((nx, ny))
+        while stack:
+            x, y = stack.pop()
+            for nx, ny in neighbors(x, y):
+                if (nx, ny) not in visited and pixels[nx, ny] == 0:
+                    visited.add((nx, ny))
+                    stack.append((nx, ny))
                     min_x = min(min_x, nx)
                     max_x = max(max_x, nx)
                     min_y = min(min_y, ny)
                     max_y = max(max_y, ny)
 
-        return min_x, min_y, max_x, max_y
+        return Box(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
 
-    def check_white_border_fast(x0, y0, x1, y1, border_width=5):
-        # 检查边界范围是否越界
-        if x0 - border_width < 0 or y0 - border_width < 0 or x1 + border_width >= width or y1 + border_width >= height:
-            return False
+    for x in range(width):
+        for y in range(height):
+            if pixels[x, y] == 0 and (x, y) not in visited:
+                box = bfs(x, y)
+                if box.w > 2 and box.h > 2:
+                    components.append(box)
 
-        # 上边界
-        if np.any(bw_np[y0 - border_width : y0, x0 - border_width : x1 + border_width + 1] == 0):
-            return False
-        # 下边界
-        if np.any(bw_np[y1 + 1 : y1 + border_width + 1, x0 - border_width : x1 + border_width + 1] == 0):
-            return False
-        # 左边界
-        if np.any(bw_np[y0 : y1 + 1, x0 - border_width : x0] == 0):
-            return False
-        # 右边界
-        if np.any(bw_np[y0 : y1 + 1, x1 + 1 : x1 + border_width + 1] == 0):
-            return False
+    if not components:
+        return []
 
-        return True
+    # Step 2. KD-tree prepare
+    centers = np.array([(b.x + b.w / 2, b.y + b.h / 2) for b in components])
+    tree = KDTree(centers)
 
-    border_width = 10
+    def merge_boxes(boxes: list[Box]) -> Box:
+        x0 = min(b.x for b in boxes)
+        y0 = min(b.y for b in boxes)
+        x1 = max(b.x + b.w for b in boxes)
+        y1 = max(b.y + b.h for b in boxes)
+        return Box(x0, y0, x1 - x0, y1 - y0)
 
-    for y in range(height):
-        for x in range(width):
-            if bw_np[y, x] == 0 and not visited[y, x]:
-                min_x, min_y, max_x, max_y = bfs(x, y)
+    def iou(a: Box, b: Box) -> float:
+        x0 = max(a.x, b.x)
+        y0 = max(a.y, b.y)
+        x1 = min(a.x + a.w, b.x + b.w)
+        y1 = min(a.y + a.h, b.y + b.h)
+        if x1 <= x0 or y1 <= y0:
+            return 0.0
+        inter = (x1 - x0) * (y1 - y0)
+        union = a.w * a.h + b.w * b.h - inter
+        return inter / union
 
-                # 尝试一次性扩展矩形，直到外围 10 像素是白色
-                expanded = True
-                while expanded:
-                    expanded = False
+    # Step 3. region growing
+    candidates: list[Box] = []
 
-                    # 计算尝试扩展后的坐标（注意不能越界）
-                    new_min_x = max(min_x - border_width, 0)
-                    new_max_x = min(max_x + border_width, width - 1)
-                    new_min_y = max(min_y - border_width, 0)
-                    new_max_y = min(max_y + border_width, height - 1)
+    for i, seed in enumerate(components):
+        used_indices = {i}
+        used_boxes = [seed]
+        best_valid: Box | None = None
 
-                    if new_min_x < min_x:
-                        if not check_white_border_fast(new_min_x, min_y, max_x, max_y, border_width):
-                            min_x = new_min_x
-                            expanded = True
-                    if new_max_x > max_x:
-                        if not check_white_border_fast(min_x, min_y, new_max_x, max_y, border_width):
-                            max_x = new_max_x
-                            expanded = True
-                    if new_min_y < min_y:
-                        if not check_white_border_fast(min_x, new_min_y, max_x, max_y, border_width):
-                            min_y = new_min_y
-                            expanded = True
-                    if new_max_y > max_y:
-                        if not check_white_border_fast(min_x, min_y, max_x, new_max_y, border_width):
-                            max_y = new_max_y
-                            expanded = True
+        while True:
+            current = merge_boxes(used_boxes)
 
-                    # 这里最多扩展一次，或者也可以直接赋值扩展完成
+            # upper bound cutoff
+            if current.w > W_RANGE[1] or current.h > H_RANGE[1]:
+                break
 
-                w = max_x - min_x + 1
-                h = max_y - min_y + 1
+            # valid record
+            if W_RANGE[0] <= current.w <= W_RANGE[1] and H_RANGE[0] <= current.h <= H_RANGE[1]:
+                best_valid = current
 
-                if w > 5 and h > 5:
-                    boxes.append(Box(min_x, min_y, w, h))
+            # KD-tree query for nearest neighbors
+            center = np.array([[current.x + current.w / 2, current.y + current.h / 2]])
+            _, idxs = tree.query(center, k=min(8, len(components)))
+            found = False
+            for idx in idxs[0]:
+                if idx not in used_indices:
+                    used_indices.add(idx)
+                    used_boxes.append(components[idx])
+                    found = True
+                    break
 
-    return boxes
+            if not found:
+                break
+
+        if best_valid:
+            candidates.append(best_valid)
+
+    # Step 4. deduplication
+    final: list[Box] = []
+    for box in sorted(candidates, key=lambda b: b.w * b.h, reverse=True):
+        if has_horizontal_white_gap(image, box):
+            continue
+        if all(iou(box, kept) < IOU_THRESH for kept in final):
+            final.append(Box(box.x - BORDER, box.y - BORDER, box.w + BORDER * 2, box.h + BORDER * 2))
+
+    return final
 
 
 def filter_boxes(
-    boxes: List[Box],
-    w_range: Optional[Tuple[int, int]] = None,
-    h_range: Optional[Tuple[int, int]] = None,
-    ratio_range: Optional[Tuple[float, float]] = None,
-) -> List[Box]:
+    boxes: list[Box],
+    w_range: Optional[tuple[int, int]] = None,
+    h_range: Optional[tuple[int, int]] = None,
+) -> list[Box]:
     filtered = []
     for box in boxes:
         keep = True
         if w_range is not None:
-            keep = keep and (w_range[0] <= box.w <= w_range[1])
+            keep = keep and (w_range[0] + BORDER * 2 <= box.w <= w_range[1] + BORDER * 2)
         if h_range is not None:
-            keep = keep and (h_range[0] <= box.h <= h_range[1])
-        if ratio_range is not None and box.h != 0:
-            ratio = box.w / box.h
-            keep = keep and (ratio_range[0] <= ratio <= ratio_range[1])
+            keep = keep and (h_range[0] + BORDER * 2 <= box.h <= h_range[1] + BORDER * 2)
         if keep:
             filtered.append(box)
     return filtered

@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
 )
 
 from ocr.detector import detect_text_regions, filter_boxes
-from ocr.merge import merge_boxes
 from ocr_cropper.app_state import AppState
 from ui.file_list import FileList
 from ui.image_view import ImageView
@@ -26,7 +25,7 @@ from utils.rules import apply_rules
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("汉字自动裁切工具")
+        self.setWindowTitle("AutoCUT")
         self.resize(1200, 800)
 
         self.state = AppState()
@@ -34,7 +33,7 @@ class MainWindow(QMainWindow):
         self.file_list = FileList()
         self.file_list.currentItemChanged.connect(self.on_file_changed)
 
-        open_btn = QPushButton("打开图片（批量）")
+        open_btn = QPushButton("Open Image")
         open_btn.clicked.connect(self.open_images)
 
         left_layout = QVBoxLayout()
@@ -51,42 +50,30 @@ class MainWindow(QMainWindow):
         self.r_max = QSpinBox()
 
         for sb in (self.w_min, self.w_max, self.h_min, self.h_max):
-            sb.setRange(0, 2000)
+            sb.setRange(0, 20000)
 
         self.w_min.setValue(30)
         self.w_max.setValue(300)
         self.h_min.setValue(30)
         self.h_max.setValue(300)
 
-        self.r_min.setRange(1, 300)
-        self.r_max.setRange(1, 300)
-        self.r_min.setValue(80)
-        self.r_max.setValue(120)
-
-        detect_btn = QPushButton("自动检测")
+        detect_btn = QPushButton("Detect Text Regions")
         detect_btn.clicked.connect(self.detect_current)
 
-        merge_btn = QPushButton("框合并")
-        merge_btn.clicked.connect(self.merge_current)
-
-        apply_btn = QPushButton("应用规则")
+        apply_btn = QPushButton("Apply Rules")
         apply_btn.clicked.connect(self.apply_rules_current)
 
-        export_btn = QPushButton("导出选中")
+        export_btn = QPushButton("Export Selected Regions")
         export_btn.clicked.connect(self.export_current)
 
         right_layout = QVBoxLayout()
-        right_layout.addWidget(QLabel("宽度"))
+        right_layout.addWidget(QLabel("Width Range"))
         right_layout.addWidget(self.w_min)
         right_layout.addWidget(self.w_max)
-        right_layout.addWidget(QLabel("高度"))
+        right_layout.addWidget(QLabel("Height Range"))
         right_layout.addWidget(self.h_min)
         right_layout.addWidget(self.h_max)
-        right_layout.addWidget(QLabel("宽高比 (%)"))
-        right_layout.addWidget(self.r_min)
-        right_layout.addWidget(self.r_max)
         right_layout.addWidget(detect_btn)
-        right_layout.addWidget(merge_btn)
         right_layout.addWidget(apply_btn)
         right_layout.addStretch()
         right_layout.addWidget(export_btn)
@@ -101,7 +88,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
     def open_images(self) -> None:
-        files, _ = QFileDialog.getOpenFileNames(self, "选择图片", "", "Images (*.png *.jpg *.jpeg)")
+        files, _ = QFileDialog.getOpenFileNames(self, "Open Images", "", "Images (*.png *.jpg *.jpeg)")
         if not files:
             return
 
@@ -148,25 +135,13 @@ class MainWindow(QMainWindow):
 
         w_range = (self.w_min.value(), self.w_max.value())
         h_range = (self.h_min.value(), self.h_max.value())
-        ratio_range = (self.r_min.value() / 100.0, self.r_max.value() / 100.0)
 
-        all_boxes = detect_text_regions(self.state.current)
-        boxes = filter_boxes(all_boxes, w_range=w_range, h_range=h_range, ratio_range=ratio_range)
+        all_boxes = detect_text_regions(self.state.current, w_range, h_range)
+        boxes = filter_boxes(all_boxes, w_range, h_range)
         self.state.images[self.state.current] = boxes
 
         self.image_view.load_image(self.state.current)
         self.image_view.load_boxes(boxes)
-
-    def merge_current(self) -> None:
-        if not self.state.current:
-            return
-
-        boxes = [item.box for item in self.image_view.box_items]
-        merged = merge_boxes(boxes)
-
-        self.state.images[self.state.current] = merged
-        self.image_view.load_image(self.state.current)
-        self.image_view.load_boxes(merged)
 
     def apply_rules_current(self) -> None:
         if not self.state.current:
@@ -178,7 +153,6 @@ class MainWindow(QMainWindow):
             boxes,
             w=(self.w_min.value(), self.w_max.value()),
             h=(self.h_min.value(), self.h_max.value()),
-            ratio=(self.r_min.value() / 100.0, self.r_max.value() / 100.0),
         )
 
         for item in self.image_view.box_items:
@@ -188,7 +162,7 @@ class MainWindow(QMainWindow):
         if not self.state.current:
             return
 
-        out_dir_str = QFileDialog.getExistingDirectory(self, "选择导出目录")
+        out_dir_str = QFileDialog.getExistingDirectory(self, "Export Selected Regions")
         if not out_dir_str:
             return
 

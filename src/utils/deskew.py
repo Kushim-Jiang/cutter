@@ -38,7 +38,7 @@ def estimate_skew_angle(image: np.ndarray) -> Optional[float]:
         else:
             angle = np.degrees(np.arctan2(dy, dx))
 
-        # 只保留接近水平或垂直的线
+        # Only keep lines close to horizontal or vertical
         if abs(angle) < 45:
             angles.append(angle)
         elif abs(abs(angle) - 90) < 45:
