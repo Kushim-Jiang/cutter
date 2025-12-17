@@ -149,11 +149,11 @@ class MainWindow(QMainWindow):
         img = auto_deskew(cv2.imread(str(path)))
         temp_path = path.with_suffix(".deskew.png")
         (temp_path.parent.parent / "deskew").mkdir(parents=True, exist_ok=True)
-        deskewed_path = temp_path.parent.parent / "deskew" / temp_path.name
-        self.export_dir.setText(str(deskewed_path.parent.parent / "result"))
+        deskew_path = temp_path.parent.parent / "deskew" / temp_path.name
+        self.export_dir.setText(str(deskew_path.parent.parent / "result"))
 
-        cv2.imwrite(str(deskewed_path), img)
-        self.image_view.load_image(deskewed_path)
+        cv2.imwrite(str(deskew_path), img)
+        self.image_view.load_image(deskew_path)
 
         boxes = self.state.images.get(path)
         if boxes:

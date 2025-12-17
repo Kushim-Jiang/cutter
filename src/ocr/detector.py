@@ -151,12 +151,12 @@ def detect_text_regions(
 
             # KD-tree query for nearest neighbors
             center = np.array([[current.x + current.w / 2, current.y + current.h / 2]])
-            _, idxs = tree.query(center, k=min(8, len(components)))
+            _, indices = tree.query(center, k=min(8, len(components)))
             found = False
-            for idx in idxs[0]:
-                if idx not in used_indices:
-                    used_indices.add(idx)
-                    used_boxes.append(components[idx])
+            for index in indices[0]:
+                if index not in used_indices:
+                    used_indices.add(index)
+                    used_boxes.append(components[index])
                     found = True
                     break
 
