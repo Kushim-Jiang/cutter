@@ -56,6 +56,9 @@ class MainWindow(QMainWindow):
 
         self.export_dir = QLineEdit(str(Path.cwd()))
         self.export_dir.setReadOnly(True)
+        export_dir_btn = QPushButton("...")
+        export_dir_btn.clicked.connect(self.select_export_directory)
+        export_dir_btn.setFixedWidth(30)
         export_btn = QPushButton("Export Selected Regions")
         export_btn.clicked.connect(self.export_current)
         self.image_view.save.connect(self.export_current)
@@ -74,7 +77,10 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.rule_table)
         right_layout.addWidget(detect_btn)
         right_layout.addStretch()
-        right_layout.addWidget(self.export_dir)
+        horizontal_layout = QHBoxLayout()
+        horizontal_layout.addWidget(self.export_dir)
+        horizontal_layout.addWidget(export_dir_btn)
+        right_layout.addLayout(horizontal_layout)
         right_layout.addWidget(export_btn)
 
         root = QHBoxLayout()
@@ -121,6 +127,11 @@ class MainWindow(QMainWindow):
             self.state.images[p] = None
 
         self.file_list.setCurrentRow(0)
+
+    def select_export_directory(self) -> None:
+        dir = QFileDialog.getExistingDirectory(self, "Select Export Directory")
+        if dir:
+            self.export_dir.setText(dir)
 
     def on_file_changed(self, current: Optional[QListWidgetItem]) -> None:
         if not current:
