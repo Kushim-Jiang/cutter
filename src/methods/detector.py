@@ -2,20 +2,12 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
 from scipy.spatial import KDTree
 
 from models.box import Box
 
 BORDER: int = 5
-
-
-def adaptive_threshold(image: Image.Image, block_size: int = 15, c: int = 10) -> Image.Image:
-    img_np = np.array(image)
-    mean = Image.fromarray(img_np).filter(ImageFilter.BoxBlur(block_size // 2))
-    mean_np = np.array(mean)
-    thresh_np = (img_np < (mean_np - c)).astype(np.uint8) * 255
-    return Image.fromarray(thresh_np).convert("1")
 
 
 def has_horizontal_white_gap(
@@ -26,9 +18,7 @@ def has_horizontal_white_gap(
     min_gap_ratio: float = 0.12,
     margin_ratio: float = 0.15,
 ) -> bool:
-    # crop area
     crop = image.crop((box.x, box.y, box.x + box.w, box.y + box.h)).convert("L")
-
     arr = np.array(crop)
     h, w = arr.shape
 
@@ -47,14 +37,13 @@ def has_horizontal_white_gap(
                 gap_start = y
         else:
             if gap_start is not None:
-                gap_height = y - gap_start
-                max_gap = max(max_gap, gap_height)
+                max_gap = max(max_gap, y - gap_start)
                 gap_start = None
 
     if gap_start is not None:
         max_gap = max(max_gap, bottom - gap_start)
 
-    return max_gap / h >= min_gap_ratio
+    return (max_gap / h) >= min_gap_ratio
 
 
 def detect_image(
@@ -62,7 +51,7 @@ def detect_image(
     W_RANGE: Optional[tuple[int, int]] = None,
     H_RANGE: Optional[tuple[int, int]] = None,
 ) -> list[Box]:
-    IOU_THRESH: float = 0.7
+    IOU_THRESH = 0.7
 
     # Step 1. binarization and connected component analysis
     image = Image.open(image_path).convert("L")
@@ -70,7 +59,7 @@ def detect_image(
     pixels = bw.load()
     width, height = bw.size
 
-    visited: set[tuple[int, int]] = set()
+    visited = set()
     components: list[Box] = []
 
     def neighbors(x: int, y: int):
@@ -136,30 +125,30 @@ def detect_image(
     for i, seed in enumerate(components):
         used_indices = {i}
         used_boxes = [seed]
-        best_valid: Box | None = None
+        best_valid: Optional[Box] = None
 
         while True:
             current = merge_boxes(used_boxes)
 
-            # upper bound cutoff
-            if current.w > W_RANGE[1] or current.h > H_RANGE[1]:
+            if W_RANGE and (current.w > W_RANGE[1]) or H_RANGE and (current.h > H_RANGE[1]):
                 break
 
-            # valid record
-            if W_RANGE[0] <= current.w <= W_RANGE[1] and H_RANGE[0] <= current.h <= H_RANGE[1]:
+            if (
+                W_RANGE
+                and H_RANGE
+                and (W_RANGE[0] <= current.w <= W_RANGE[1] and H_RANGE[0] <= current.h <= H_RANGE[1])
+            ):
                 best_valid = current
 
-            # KD-tree query for nearest neighbors
             center = np.array([[current.x + current.w / 2, current.y + current.h / 2]])
             _, indices = tree.query(center, k=min(8, len(components)))
             found = False
-            for index in indices[0]:
-                if index not in used_indices:
-                    used_indices.add(index)
-                    used_boxes.append(components[index])
+            for idx in indices[0]:
+                if idx not in used_indices:
+                    used_indices.add(idx)
+                    used_boxes.append(components[idx])
                     found = True
                     break
-
             if not found:
                 break
 
@@ -177,16 +166,14 @@ def detect_image(
     return final
 
 
-def detect_selection(image: Image.Image, rect: Box) -> Box | None:
-    x0 = rect.x
-    y0 = rect.y
-    x1 = rect.x + rect.w
-    y1 = rect.y + rect.h
+def detect_selection(image: Image.Image, rect: Box) -> Optional[Box]:
+    x0, y0 = rect.x, rect.y
+    x1, y1 = rect.x + rect.w, rect.y + rect.h
 
     crop = image.crop((x0, y0, x1, y1)).convert("L")
     arr = np.array(crop)
-
     mask = arr < 128
+
     if not mask.any():
         return None
 

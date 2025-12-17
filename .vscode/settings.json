@@ -5,6 +5,9 @@
         "fromarray",
         "imread",
         "imwrite",
-        "Pixmap"
+        "numpy",
+        "opencv",
+        "Pixmap",
+        "scipy"
     ]
 }
