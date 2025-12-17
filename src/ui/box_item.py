@@ -96,7 +96,7 @@ class BoxItem(QGraphicsRectItem):
         super().mouseReleaseEvent(event)
 
 
-def sort_reading_order(box_items: list[BoxItem], image_width: int) -> list[BoxItem]:
+def sort_reading_order(box_items: list[BoxItem], image_width: int, column_count: int) -> list[BoxItem]:
 
     def sort_single_column(box_items: list[BoxItem], *, line_tol: int = 10) -> list[BoxItem]:
         items = [(b, b.box.x, b.box.y + b.box.h) for b in box_items]
@@ -121,11 +121,16 @@ def sort_reading_order(box_items: list[BoxItem], image_width: int) -> list[BoxIt
 
         return result
 
-    mid_x = image_width / 2
-    left = [b for b in box_items if b.box.x + b.box.w / 2 < mid_x]
-    right = [b for b in box_items if b.box.x + b.box.w / 2 >= mid_x]
+    col_width = image_width / column_count
+    columns: list[list[BoxItem]] = [[] for _ in range(column_count)]
+    for b in box_items:
+        center_x = b.box.x + b.box.w / 2
+        col_idx = int(center_x // col_width)
+        if col_idx >= column_count:
+            col_idx = column_count - 1
+        columns[col_idx].append(b)
 
     ordered = []
-    ordered.extend(sort_single_column(left))
-    ordered.extend(sort_single_column(right))
+    for col_boxes in columns:
+        ordered.extend(sort_single_column(col_boxes))
     return ordered

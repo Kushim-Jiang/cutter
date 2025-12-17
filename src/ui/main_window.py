@@ -4,7 +4,7 @@ from typing import Optional
 import cv2
 from PIL import Image
 from PySide6.QtCore import QRect
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeyEvent, Qt, QMouseEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeyEvent, QMouseEvent, Qt
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -71,6 +72,10 @@ class MainWindow(QMainWindow):
         detect_btn.clicked.connect(self.detect_current)
         self.image_view.detect.connect(self.detect_current)
 
+        self.column_spin = QSpinBox()
+        self.column_spin.setMinimum(1)
+        self.column_spin.setValue(2)
+
         self.export_dir = QLineEdit(str(Path.cwd()))
         self.export_dir.setReadOnly(True)
         export_dir_btn = QPushButton("...")
@@ -85,10 +90,14 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.rule_table)
         right_layout.addWidget(detect_btn)
         right_layout.addStretch()
-        horizontal_layout = QHBoxLayout()
-        horizontal_layout.addWidget(self.export_dir)
-        horizontal_layout.addWidget(export_dir_btn)
-        right_layout.addLayout(horizontal_layout)
+        export_column_layout = QHBoxLayout()
+        export_column_layout.addWidget(QLabel("Columns:"))
+        export_column_layout.addWidget(self.column_spin)
+        right_layout.addLayout(export_column_layout)
+        export_dir_layout = QHBoxLayout()
+        export_dir_layout.addWidget(self.export_dir)
+        export_dir_layout.addWidget(export_dir_btn)
+        right_layout.addLayout(export_dir_layout)
         right_layout.addWidget(export_btn)
 
         root = QHBoxLayout()
@@ -200,11 +209,12 @@ class MainWindow(QMainWindow):
         if not self.state.current:
             return
 
+        column_count: int = self.column_spin.value()
         out_dir = Path(self.export_dir.text())
         out_dir.mkdir(parents=True, exist_ok=True)
 
         img = cv2.imread(str(self.state.current))
-        ordered_boxes = sort_reading_order(self.image_view.box_items, img.shape[1])
+        ordered_boxes = sort_reading_order(self.image_view.box_items, img.shape[1], column_count)
         for i, item in enumerate(ordered_boxes, 1):
             box = item.box
             crop = img[box.y : box.y + box.h, box.x : box.x + box.w]
