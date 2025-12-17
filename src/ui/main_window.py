@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         apply_btn.clicked.connect(self.apply_rules_current)
 
         self.export_dir = QLineEdit(str(Path.cwd()))
+        self.export_dir.setReadOnly(True)
         export_btn = QPushButton("Export Selected Regions")
         export_btn.clicked.connect(self.export_current)
 
@@ -112,27 +113,13 @@ class MainWindow(QMainWindow):
             return
 
         paths = [Path(p) for p in files]
-
         self.file_list.load_files(paths)
         for p in paths:
-            img = cv2.imread(str(p))
-            if img is None:
-                continue
-            img = auto_deskew(img)
-            temp_path = p.with_suffix(".deskew.png")
-
-            (temp_path.parent.parent / "deskew").mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(temp_path.parent.parent / "deskew" / temp_path.name), img)
-
-            self.state.images[temp_path] = None
+            self.state.images[p] = None
 
         self.file_list.setCurrentRow(0)
 
-    def on_file_changed(
-        self,
-        current: Optional[QListWidgetItem],
-        previous: Optional[QListWidgetItem],
-    ) -> None:
+    def on_file_changed(self, current: Optional[QListWidgetItem]) -> None:
         if not current:
             return
 
@@ -141,8 +128,15 @@ class MainWindow(QMainWindow):
 
         path = Path(current.text())
         self.state.current = path
-
         self.image_view.load_image(path)
+
+        img = auto_deskew(cv2.imread(str(path)))
+        temp_path = path.with_suffix(".deskew.png")
+        (temp_path.parent.parent / "deskew").mkdir(parents=True, exist_ok=True)
+        deskewed_path = temp_path.parent.parent / "deskew" / temp_path.name
+        self.export_dir.setText(str(deskewed_path.parent))
+        cv2.imwrite(str(deskewed_path), img)
+        self.image_view.load_image(deskewed_path)
 
         boxes = self.state.images.get(path)
         if boxes:
