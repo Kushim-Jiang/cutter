@@ -214,6 +214,10 @@ class MainWindow(QMainWindow):
             crop = img[box.y : box.y + box.h, box.x : box.x + box.w]
             cv2.imwrite(str(out_dir / f"{self.state.current.stem}_{i:03d}.png"), crop)
 
+        # go to next image
+        self.file_list.setCurrentRow(self.file_list.currentRow() + 1)
+        self.detect_current()
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Delete:
             self.image_view.delete_selected_boxes()
