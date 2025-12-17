@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
+from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt, Signal
+from PySide6.QtGui import QMouseEvent, QPixmap, QWheelEvent
+from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QRubberBand
 
 from models.box import Box
 from ui.box_item import BoxItem
@@ -14,14 +14,21 @@ class ImageView(QGraphicsView):
     drawing: bool
     start: Optional[QPointF]
     temp: Optional[object]
+    selection_finished = Signal(QRect)
+    pos_str = Signal(str)
+    sel_str = Signal(str)
+    zoom_changed = Signal(str)
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
         self.setScene(QGraphicsScene(self))
         self.box_items = []
         self.drawing = False
         self.start = None
         self.temp = None
+
+        self._rubber = QRubberBand(QRubberBand.Shape.Rectangle, self)
+        self._origin: Optional[QPoint] = None
 
     def load_image(self, path: Path) -> None:
         self.scene().clear()
@@ -37,40 +44,36 @@ class ImageView(QGraphicsView):
             self.scene().addItem(item)
             self.box_items.append(item)
 
-    def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.RightButton:
-            self.drawing = True
-            self.start = self.mapToScene(event.pos())
-            self.temp = self.scene().addRect(QRectF())
-        else:
-            super().mousePressEvent(event)
+    def delete_selected_boxes(self) -> None:
+        for item in self.scene().selectedItems():
+            if isinstance(item, BoxItem):
+                self.scene().removeItem(item)
+                self.box_items.remove(item)
 
-    def mouseMoveEvent(self, event) -> None:
-        if self.drawing and self.start and self.temp:
-            cur: QPointF = self.mapToScene(event.pos())
-            self.temp.setRect(QRectF(self.start, cur).normalized())
-        else:
-            super().mouseMoveEvent(event)
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        pos = self.mapToScene(event.pos())
+        self.sel_str.emit(f"Sel: ({int(pos.x())}, {int(pos.y())})")
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._origin = event.pos()
+            self._rubber.setGeometry(QRect(self._origin, QSize()))
+            self._rubber.show()
+        super().mousePressEvent(event)
 
-    def mouseReleaseEvent(self, event) -> None:
-        if self.drawing and self.start and self.temp:
-            r: QRectF = self.temp.rect()
-            self.scene().removeItem(self.temp)
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        pos = self.mapToScene(event.pos())
+        self.pos_str.emit(f"Pos: ({int(pos.x())}, {int(pos.y())})")
+        if self._origin:
+            rect = QRect(self._origin, event.pos()).normalized()
+            self._rubber.setGeometry(rect)
+        super().mouseMoveEvent(event)
 
-            box = Box(
-                x=int(r.x()),
-                y=int(r.y()),
-                w=int(r.width()),
-                h=int(r.height()),
-                source="manual",
-            )
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        self.sel_str.emit("Sel: (-, -)")
+        if self._origin:
+            self._rubber.hide()
+            rect = QRect(self._origin, event.pos()).normalized()
+            scene_rect = self.mapToScene(rect).boundingRect().toRect()
+            self.selection_finished.emit(scene_rect)
+            self._origin = None
+        super().mouseReleaseEvent(event)
 
-            item = BoxItem(box)
-            self.scene().addItem(item)
-            self.box_items.append(item)
-
-            self.drawing = False
-            self.start = None
-            self.temp = None
-        else:
-            super().mouseReleaseEvent(event)

@@ -177,18 +177,29 @@ def detect_text_regions(
     return final
 
 
-def filter_boxes(
-    boxes: list[Box],
-    w_range: Optional[tuple[int, int]] = None,
-    h_range: Optional[tuple[int, int]] = None,
-) -> list[Box]:
-    filtered = []
-    for box in boxes:
-        keep = True
-        if w_range is not None:
-            keep = keep and (w_range[0] + BORDER * 2 <= box.w <= w_range[1] + BORDER * 2)
-        if h_range is not None:
-            keep = keep and (h_range[0] + BORDER * 2 <= box.h <= h_range[1] + BORDER * 2)
-        if keep:
-            filtered.append(box)
-    return filtered
+def refine_box_from_selection(image: Image.Image, rect: Box) -> Box | None:
+    x0 = rect.x
+    y0 = rect.y
+    x1 = rect.x + rect.w
+    y1 = rect.y + rect.h
+
+    crop = image.crop((x0, y0, x1, y1)).convert("L")
+    arr = np.array(crop)
+
+    mask = arr < 128
+    if not mask.any():
+        return None
+
+    ys, xs = np.where(mask)
+    min_x, max_x = xs.min(), xs.max()
+    min_y, max_y = ys.min(), ys.max()
+
+    return Box(
+        x=x0 + min_x - BORDER,
+        y=y0 + min_y - BORDER,
+        w=max_x - min_x + 1 + BORDER * 2,
+        h=max_y - min_y + 1 + BORDER * 2,
+        selected=True,
+        locked=False,
+        source="manual",
+    )

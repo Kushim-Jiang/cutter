@@ -13,12 +13,18 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PySide6.QtCore import QRect
+from PySide6.QtGui import QKeyEvent, Qt
 
-from ocr.detector import detect_text_regions, filter_boxes
+from PIL import Image
+
+from ocr.detector import detect_text_regions, refine_box_from_selection
 from ocr_cropper.app_state import AppState
+from ui.box_item import BoxItem
 from ui.file_list import FileList
 from ui.image_view import ImageView
 from utils.deskew import auto_deskew
+from models.box import Box
 from utils.rules import apply_rules
 
 
@@ -87,6 +93,14 @@ class MainWindow(QMainWindow):
         container.setLayout(root)
         self.setCentralWidget(container)
 
+        self.status_pos = QLabel()
+        self.status_sel = QLabel()
+        self.statusBar().addPermanentWidget(self.status_sel)
+        self.statusBar().addPermanentWidget(self.status_pos)
+        self.image_view.pos_str.connect(self.status_pos.setText)
+        self.image_view.sel_str.connect(self.status_sel.setText)
+        self.image_view.selection_finished.connect(self.on_selection_finished)
+
     def open_images(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, "Open Images", "", "Images (*.png *.jpg *.jpeg)")
         if not files:
@@ -129,6 +143,17 @@ class MainWindow(QMainWindow):
         if boxes:
             self.image_view.load_boxes(boxes)
 
+    def on_selection_finished(self, rect: QRect) -> None:
+        if not self.state.current:
+            return
+
+        rect_box = Box(rect.left(), rect.top(), rect.width(), rect.height())
+        box = refine_box_from_selection(Image.open(self.state.current), rect_box)
+        if box:
+            box_item = BoxItem(box)
+            self.image_view.scene().addItem(box_item)
+            self.image_view.box_items.append(box_item)
+
     def detect_current(self) -> None:
         if not self.state.current:
             return
@@ -136,8 +161,7 @@ class MainWindow(QMainWindow):
         w_range = (self.w_min.value(), self.w_max.value())
         h_range = (self.h_min.value(), self.h_max.value())
 
-        all_boxes = detect_text_regions(self.state.current, w_range, h_range)
-        boxes = filter_boxes(all_boxes, w_range, h_range)
+        boxes = detect_text_regions(self.state.current, w_range, h_range)
         self.state.images[self.state.current] = boxes
 
         self.image_view.load_image(self.state.current)
@@ -177,3 +201,8 @@ class MainWindow(QMainWindow):
 
             crop = img[box.y : box.y + box.h, box.x : box.x + box.w]
             cv2.imwrite(str(out_dir / f"crop_{i}.png"), crop)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Delete:
+            self.image_view.delete_selected_boxes()
+        super().keyPressEvent(event)

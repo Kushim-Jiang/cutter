@@ -23,7 +23,9 @@ class BoxItem(QGraphicsRectItem):
         self.resize_dir = None
 
         self.setFlags(
-            QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable | QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
+            QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsRectItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
         self.setAcceptHoverEvents(True)
         self.update_style()
