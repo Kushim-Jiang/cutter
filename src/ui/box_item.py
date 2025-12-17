@@ -100,3 +100,38 @@ class BoxItem(QGraphicsRectItem):
     def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         self.box.locked = not self.box.locked
         self.update_style()
+
+
+def sort_reading_order(box_items: list[BoxItem], image_width: int) -> list[BoxItem]:
+
+    def sort_single_column(box_items: list[BoxItem], *, line_tol: int = 10) -> list[BoxItem]:
+        items = [(b, b.box.x, b.box.y + b.box.h) for b in box_items]
+        items.sort(key=lambda t: t[2])
+
+        lines: list[list[tuple[BoxItem, int, int]]] = []
+        for box_item, x, y in items:
+            placed = False
+            for line in lines:
+                _, _, ly = line[0]
+                if abs(y - ly) <= line_tol:
+                    line.append((box_item, x, y))
+                    placed = True
+                    break
+            if not placed:
+                lines.append([(box_item, x, y)])
+
+        result: list[BoxItem] = []
+        for line in lines:
+            line.sort(key=lambda t: t[1])
+            result.extend(b for b, _, _ in line)
+
+        return result
+
+    mid_x = image_width / 2
+    left = [b for b in box_items if b.box.x + b.box.w / 2 < mid_x]
+    right = [b for b in box_items if b.box.x + b.box.w / 2 >= mid_x]
+
+    ordered = []
+    ordered.extend(sort_single_column(left))
+    ordered.extend(sort_single_column(right))
+    return ordered

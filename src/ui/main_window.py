@@ -2,10 +2,14 @@ from pathlib import Path
 from typing import Optional
 
 import cv2
+from PIL import Image
+from PySide6.QtCore import QRect
+from PySide6.QtGui import QKeyEvent, Qt
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidgetItem,
     QMainWindow,
     QPushButton,
@@ -13,18 +17,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import QRect
-from PySide6.QtGui import QKeyEvent, Qt
 
-from PIL import Image
-
+from models.box import Box
 from ocr.detector import detect_text_regions, refine_box_from_selection
 from ocr_cropper.app_state import AppState
-from ui.box_item import BoxItem
+from ui.box_item import BoxItem, sort_reading_order
 from ui.file_list import FileList
 from ui.image_view import ImageView
 from utils.deskew import auto_deskew
-from models.box import Box
 from utils.rules import apply_rules
 
 
@@ -69,6 +69,7 @@ class MainWindow(QMainWindow):
         apply_btn = QPushButton("Apply Rules")
         apply_btn.clicked.connect(self.apply_rules_current)
 
+        self.export_dir = QLineEdit(str(Path.cwd()))
         export_btn = QPushButton("Export Selected Regions")
         export_btn.clicked.connect(self.export_current)
 
@@ -82,6 +83,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(detect_btn)
         right_layout.addWidget(apply_btn)
         right_layout.addStretch()
+        right_layout.addWidget(self.export_dir)
         right_layout.addWidget(export_btn)
 
         root = QHBoxLayout()
@@ -151,6 +153,9 @@ class MainWindow(QMainWindow):
             return
 
         rect_box = Box(rect.left(), rect.top(), rect.width(), rect.height())
+        if rect.width() < self.w_min.value() or rect.height() < self.h_min.value():
+            return
+
         box = refine_box_from_selection(Image.open(self.state.current), rect_box)
         if box:
             box_item = BoxItem(box)
@@ -189,21 +194,15 @@ class MainWindow(QMainWindow):
         if not self.state.current:
             return
 
-        out_dir_str = QFileDialog.getExistingDirectory(self, "Export Selected Regions")
-        if not out_dir_str:
-            return
-
-        out_dir = Path(out_dir_str)
+        out_dir = Path(self.export_dir.text())
+        out_dir.mkdir(parents=True, exist_ok=True)
 
         img = cv2.imread(str(self.state.current))
-
-        for i, item in enumerate(self.image_view.box_items):
+        ordered_boxes = sort_reading_order(self.image_view.box_items, img.shape[1])
+        for i, item in enumerate(ordered_boxes, 1):
             box = item.box
-            if not box.selected:
-                continue
-
             crop = img[box.y : box.y + box.h, box.x : box.x + box.w]
-            cv2.imwrite(str(out_dir / f"crop_{i}.png"), crop)
+            cv2.imwrite(str(out_dir / f"{self.state.current.stem}_{i:03d}.png"), crop)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Delete:

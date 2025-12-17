@@ -1,8 +1,7 @@
 import sys
+from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
-
-from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 sys.path.append(str(REPO_ROOT))
