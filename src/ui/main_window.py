@@ -4,7 +4,7 @@ from typing import Optional
 import cv2
 from PIL import Image
 from PySide6.QtCore import QRect
-from PySide6.QtGui import QKeyEvent, Qt
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeyEvent, Qt
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -33,6 +33,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("AutoCUT")
         self.resize(1200, 800)
+        self.acceptDrops()
 
         self.state = AppState()
 
@@ -112,8 +113,21 @@ class MainWindow(QMainWindow):
         files, _ = QFileDialog.getOpenFileNames(self, "Open Images", "", "Images (*.png *.jpg *.jpeg)")
         if not files:
             return
+        self.add_dirs(files)
 
-        paths = [Path(p) for p in files]
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        urls = event.mimeData().urls()
+        dirs = [url.toLocalFile() for url in urls if url.toLocalFile().endswith((".png", ".jpg", ".jpeg"))]
+        if not dirs:
+            return
+        self.add_dirs(dirs)
+
+    def add_dirs(self, dirs: list[str]) -> None:
+        paths = [Path(p) for p in sorted(dirs)]
         self.file_list.load_files(paths)
         for p in paths:
             self.state.images[p] = None

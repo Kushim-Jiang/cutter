@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QKeyEvent, QMouseEvent, QPixmap, QWheelEvent, QKeySequence
+from PySide6.QtGui import QKeyEvent, QKeySequence, QMouseEvent, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QRubberBand
 
 from models.box import Box
