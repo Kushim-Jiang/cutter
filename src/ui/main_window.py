@@ -4,7 +4,7 @@ from typing import Optional
 import cv2
 from PIL import Image
 from PySide6.QtCore import QRect
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeyEvent, Qt
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeyEvent, Qt, QMouseEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -27,6 +27,23 @@ from models.state import AppState
 from ui.box_item import BoxItem, sort_reading_order
 from ui.file_list import FileList
 from ui.image_view import ImageView
+
+
+class TableWidget(QTableWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setColumnCount(4)
+        self.setHorizontalHeaderLabels(["w_min", "w_max", "h_min", "h_max"])
+        self.setRowCount(5)
+        for row in range(5):
+            for col in range(4):
+                self.setItem(row, col, QTableWidgetItem(""))
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.insertRow(self.rowCount())
+        super().mouseDoubleClickEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -62,18 +79,9 @@ class MainWindow(QMainWindow):
         export_btn = QPushButton("Export Selected Regions")
         export_btn.clicked.connect(self.export_current)
         self.image_view.save.connect(self.export_current)
+        self.rule_table = TableWidget()
 
         right_layout = QVBoxLayout()
-
-        self.rule_table = QTableWidget()
-        self.rule_table.setColumnCount(4)
-        self.rule_table.setHorizontalHeaderLabels(["w_min", "w_max", "h_min", "h_max"])
-        self.rule_table.setRowCount(5)
-        for row in range(5):
-            for col in range(4):
-                self.rule_table.setItem(row, col, QTableWidgetItem(""))
-        self.rule_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-
         right_layout.addWidget(self.rule_table)
         right_layout.addWidget(detect_btn)
         right_layout.addStretch()
