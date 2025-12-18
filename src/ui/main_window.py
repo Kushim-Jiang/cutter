@@ -33,14 +33,29 @@ from ui.image_view import ImageView
 class TableWidget(QTableWidget):
     def __init__(self) -> None:
         super().__init__()
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
         self.setColumnCount(4)
         self.setHorizontalHeaderLabels(["w_min", "w_max", "h_min", "h_max"])
         self.setRowCount(5)
-
         for row in range(self.rowCount()):
             for col in range(self.columnCount()):
                 self.setItem(row, col, QTableWidgetItem(""))
-        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+        self.itemChanged.connect(self._on_item_changed)
+
+    def _on_item_changed(self, item: QTableWidgetItem) -> None:
+        column_map = {0: 2, 1: 3}
+
+        row, col = item.row(), item.column()
+        text = item.text().strip()
+        if (not text) or (col not in column_map):
+            return
+        target_item = self.item(row, column_map[col])
+        if target_item is not None:
+            self.blockSignals(True)
+            target_item.setText(text)
+            self.blockSignals(False)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
