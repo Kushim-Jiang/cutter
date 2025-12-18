@@ -151,9 +151,11 @@ class ImageView(QGraphicsView):
                 if isinstance(item, BoxItem):
                     item.setSelected(True)
             return
-
         if event.matches(QKeySequence.StandardKey.Save):
             self.save.emit()
+            return
+        if event.matches(QKeySequence.StandardKey.Find):
+            self.fit_to_view()
             return
 
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -165,3 +167,10 @@ class ImageView(QGraphicsView):
     def drawBackground(self, painter: QPainter, rect: QRect) -> None:
         painter.fillRect(rect, QBrush(Qt.GlobalColor.lightGray))
         super().drawBackground(painter, rect)
+
+    def fit_to_view(self) -> None:
+        scene_rect = self.sceneRect()
+        self.resetTransform()
+        self.fitInView(scene_rect, Qt.AspectRatioMode.KeepAspectRatio)
+        self._zoom = self.transform().m11()
+        self.zoom_changed.emit(f"Zoom: {(self._zoom * 100):.2f}%")
