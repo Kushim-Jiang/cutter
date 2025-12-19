@@ -8,6 +8,7 @@ from scipy.spatial import KDTree
 from models.box import Box
 
 BORDER: int = 5
+COVER_THRESH: float = 0.95
 
 
 def has_horizontal_white_gap(
@@ -156,13 +157,32 @@ def detect_image(
             candidates.append(best_valid)
 
     # Step 4. deduplication
+    def coverage_ratio(a: Box, b: Box) -> float:
+        min_area = min(a.w * a.h, b.w * b.h)
+        if min_area == 0:
+            return 0.0
+        return iou(a, b) / min_area
+
+    sorted_candidates = sorted(candidates, key=lambda b: b.w * b.h, reverse=True)
     final: list[Box] = []
-    for box in sorted(candidates, key=lambda b: b.w * b.h, reverse=True):
+
+    for box in sorted_candidates:
         if has_horizontal_white_gap(image, box):
             continue
-        if all(iou(box, kept) < IOU_THRESH for kept in final):
-            final.append(Box(box.x - BORDER, box.y - BORDER, box.w + BORDER * 2, box.h + BORDER * 2))
+        if any(iou(box, kept) >= IOU_THRESH for kept in final):
+            continue
 
+        should_keep = True
+        for i, kept in enumerate(final):
+            if coverage_ratio(box, kept) >= COVER_THRESH:
+                final[i] = box
+                should_keep = False
+                break
+            elif coverage_ratio(kept, box) >= COVER_THRESH:
+                should_keep = False
+                break
+        if should_keep:
+            final.append(Box(box.x - BORDER, box.y - BORDER, box.w + BORDER * 2, box.h + BORDER * 2))
     return final
 
 
