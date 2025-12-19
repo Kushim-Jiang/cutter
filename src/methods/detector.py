@@ -5,11 +5,9 @@ import numpy as np
 from PIL import Image
 from scipy.spatial import KDTree
 
-from models.box import Box
+from models.box import IOU_THRESH, Box, iou
 
 BORDER: int = 5
-IOU_THRESH: float = 0.7
-COVER_THRESH: float = 0.95
 
 
 def has_white_gap(
@@ -121,17 +119,6 @@ def detect_image(
         y1 = max(b.y + b.h for b in boxes)
         return Box(x0, y0, x1 - x0, y1 - y0)
 
-    def iou(a: Box, b: Box) -> float:
-        x0 = max(a.x, b.x)
-        y0 = max(a.y, b.y)
-        x1 = min(a.x + a.w, b.x + b.w)
-        y1 = min(a.y + a.h, b.y + b.h)
-        if x1 <= x0 or y1 <= y0:
-            return 0.0
-        inter = (x1 - x0) * (y1 - y0)
-        union = a.w * a.h + b.w * b.h - inter
-        return inter / union
-
     # Step 3. region growing
     candidates: list[Box] = []
 
@@ -169,12 +156,6 @@ def detect_image(
             candidates.append(best_valid)
 
     # Step 4. deduplication
-    def coverage_ratio(a: Box, b: Box) -> float:
-        min_area = min(a.w * a.h, b.w * b.h)
-        if min_area == 0:
-            return 0.0
-        return iou(a, b) / min_area
-
     sorted_candidates = sorted(candidates, key=lambda b: b.w * b.h, reverse=True)
     final: list[Box] = []
 
@@ -183,18 +164,7 @@ def detect_image(
             continue
         if any(iou(box, kept) >= IOU_THRESH for kept in final):
             continue
-
-        should_keep = True
-        for i, kept in enumerate(final):
-            if coverage_ratio(box, kept) >= COVER_THRESH:
-                final[i] = box
-                should_keep = False
-                break
-            elif coverage_ratio(kept, box) >= COVER_THRESH:
-                should_keep = False
-                break
-        if should_keep:
-            final.append(Box(box.x - BORDER, box.y - BORDER, box.w + BORDER * 2, box.h + BORDER * 2))
+        final.append(Box(box.x - BORDER, box.y - BORDER, box.w + BORDER * 2, box.h + BORDER * 2))
     return final
 
 
