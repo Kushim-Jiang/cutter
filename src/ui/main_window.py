@@ -96,7 +96,6 @@ class MainWindow(QMainWindow):
 
         detect_btn = QPushButton("Detect Text Regions")
         detect_btn.clicked.connect(self.detect_current)
-        self.image_view.detect.connect(self.detect_current)
 
         # right layout
         self.column_spin = QSpinBox()

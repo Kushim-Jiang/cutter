@@ -19,7 +19,6 @@ class ImageView(QGraphicsView):
     sel_str = Signal(str)
     zoom_changed = Signal(str)
     save = Signal()
-    detect = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -154,15 +153,11 @@ class ImageView(QGraphicsView):
                 if isinstance(item, BoxItem):
                     item.setSelected(True)
             return
-        if event.matches(QKeySequence.StandardKey.Save):
-            self.save.emit()
-            return
         if event.matches(QKeySequence.StandardKey.Find):
             self.fit_to_view()
             return
-
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self.detect.emit()
+            self.save.emit()
             return
 
         super().keyPressEvent(event)
