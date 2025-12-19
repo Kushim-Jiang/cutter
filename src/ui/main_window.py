@@ -194,14 +194,13 @@ class MainWindow(QMainWindow):
             self.state.images[self.state.current] = [item.box for item in self.image_view.box_items]
 
         path = Path(current.text())
-        self.state.current = path
-
         img_cv = cv2.imread(str(path))
         deskew_img = auto_deskew(img_cv)
         deskew_dir = path.parent.parent / "deskew"
         deskew_dir.mkdir(exist_ok=True, parents=True)
         deskew_path = deskew_dir / f"{path.stem}.deskew.png"
         cv2.imwrite(str(deskew_path), deskew_img)
+        self.state.current = deskew_path
 
         default_export_dir = deskew_dir.parent / "result"
         self.export_dir.setText(str(default_export_dir))
@@ -261,7 +260,7 @@ class MainWindow(QMainWindow):
         for idx, box_item in enumerate(ordered_boxes, 1):
             box = box_item.box
             cropped = img[box.y : box.y + box.h, box.x : box.x + box.w]
-            out_path = out_dir / f"{self.state.current.stem}_{idx:03d}.png"
+            out_path = out_dir / f"{self.state.current.stem.removesuffix('.deskew')}_{idx:03d}.png"
             cv2.imwrite(str(out_path), cropped)
 
         # go to next image
