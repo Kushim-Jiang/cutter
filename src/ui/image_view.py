@@ -115,6 +115,9 @@ class ImageView(QGraphicsView):
         super().mouseReleaseEvent(event)
 
     def _handle_click(self, scene_pos: QPoint) -> None:
+        for item in self.box_items:
+            item.setSelected(False)
+
         candidates: list[tuple[float, BoxItem]] = []
         for item in self.scene().items(scene_pos):
             if isinstance(item, BoxItem):
@@ -122,7 +125,6 @@ class ImageView(QGraphicsView):
                 if rect.contains(scene_pos):
                     area = rect.width() * rect.height()
                     candidates.append((area, item))
-
         if candidates:
             _, smallest = min(candidates, key=lambda pair: pair[0])
             smallest.setSelected(not smallest.isSelected())
