@@ -1,80 +1,53 @@
-from typing import Optional
-
 import cv2
 import numpy as np
 
-MAX_ROTATE_DEG: float = 20.0
+ANGLE_LIMIT = 45
 
 
-def estimate_skew_angle(image: np.ndarray) -> Optional[float]:
-    if image is None or image.size == 0:
-        return None
-
-    if len(image.shape) == 3 and image.shape[2] == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = image
-
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-
-    lines = cv2.HoughLinesP(
-        edges,
-        rho=1,
-        theta=np.pi / 180,
-        threshold=100,
-        minLineLength=50,
-        maxLineGap=10,
-    )
-
-    if lines is None or len(lines) == 0:
-        return None
-
-    angles = []
-    for line in lines:
-        x1, y1, x2, y2 = line[0]
-        dx = x2 - x1
-        dy = y2 - y1
-        if dx == 0:
-            angle = 90.0
-        else:
-            angle = np.degrees(np.arctan2(dy, dx))
-
-        # Normalize angles near horizontal or vertical
-        abs_angle = abs(angle)
-        if abs_angle <= 45:
-            angles.append(angle)
-        elif 45 < abs_angle <= 135:
-            # Convert vertical-ish lines to angle relative to horizontal
-            angles.append(angle - 90 if angle > 0 else angle + 90)
-        # else discard angles near 180/-180
-
-    if not angles:
-        return None
-
-    median_angle = float(np.median(angles))
-    if abs(median_angle) > MAX_ROTATE_DEG:
-        return None
-
-    return median_angle
-
-
-def rotate_image(image: np.ndarray, angle_deg: float) -> np.ndarray:
+def rotate(image: np.ndarray, angle: float) -> np.ndarray:
     h, w = image.shape[:2]
-    center = (w // 2, h // 2)
+    center = (w / 2.0, h / 2.0)
+    m = cv2.getRotationMatrix2D(center, angle, 1.0)
+    return cv2.warpAffine(image, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
-    m = cv2.getRotationMatrix2D(center, angle_deg, 1.0)
-    rotated = cv2.warpAffine(
-        image,
-        m,
-        (w, h),
-        flags=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
-    return rotated
+
+def normalize_angle(angle: float) -> float:
+    if angle < -ANGLE_LIMIT:
+        angle += 90
+    elif angle > ANGLE_LIMIT:
+        angle -= 90
+    return angle
+
+
+def get_angle(rectangles: list[tuple[float, tuple[tuple[float, float], tuple[float, float], float]]]) -> float:
+    angles = sorted([normalize_angle(rect[-1]) for _, rect in rectangles])
+    trim_count = int(len(angles) * 0.5)
+    trimmed_angles = angles[trim_count:-trim_count]
+    return sum(trimmed_angles) / len(trimmed_angles) if trimmed_angles else 0.0
 
 
 def auto_deskew(image: np.ndarray) -> np.ndarray:
-    angle = estimate_skew_angle(image)
-    if angle is None:
+    if image is None or image.size == 0:
         return image
-    return rotate_image(image, -angle)
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 and image.shape[2] == 3 else image
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return image
+
+    rectangles = []
+    for contour in contours:
+        if cv2.contourArea(contour) < 10:
+            continue
+        rectangle = cv2.minAreaRect(contour)
+        width, height = rectangle[1]
+        if width == 0 or height == 0:
+            continue
+        rectangles.append((width / height, rectangle))
+    if len(rectangles) < 2:
+        return image
+
+    rectangles.sort(key=lambda x: x[0])
+    angle = get_angle(rectangles)
+    return rotate(image, angle)

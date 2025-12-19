@@ -196,15 +196,16 @@ class MainWindow(QMainWindow):
         path = Path(current.text())
         img_cv = cv2.imread(str(path))
         deskew_img = auto_deskew(img_cv)
+
         deskew_dir = path.parent.parent / "deskew"
         deskew_dir.mkdir(exist_ok=True, parents=True)
         deskew_path = deskew_dir / f"{path.stem}.deskew.png"
         cv2.imwrite(str(deskew_path), deskew_img)
         self.state.current = deskew_path
+        self.image_view.load_image(self.state.current)
 
         default_export_dir = deskew_dir.parent / "result"
         self.export_dir.setText(str(default_export_dir))
-        self.image_view.load_image(deskew_path)
 
         boxes = self.state.images.get(path)
         if boxes:

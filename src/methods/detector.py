@@ -8,6 +8,7 @@ from scipy.spatial import KDTree
 from models.box import IOU_THRESH, Box, iou
 
 BORDER: int = 5
+WHITE_GAP_RATIO: float = 0.12
 
 
 def has_white_gap(
@@ -15,8 +16,7 @@ def has_white_gap(
     box: Box,
     *,
     white_ratio_thresh: float = 0.03,
-    min_gap_ratio: float = 0.12,
-    margin_ratio: float = 0.15,
+    margin_ratio: float = 0,
 ) -> bool:
     crop = image.crop((box.x, box.y, box.x + box.w, box.y + box.h)).convert("L")
     arr = np.array(crop)
@@ -40,7 +40,7 @@ def has_white_gap(
                 row_gap_start = None
     if row_gap_start is not None:
         row_gap_max = max(row_gap_max, bottom - row_gap_start)
-    has_horizontal_gap = (row_gap_max / h) >= min_gap_ratio
+    has_horizontal_gap = (row_gap_max / h) >= WHITE_GAP_RATIO
 
     col_gap_start = None
     col_gap_max = 0
@@ -54,7 +54,7 @@ def has_white_gap(
                 col_gap_start = None
     if col_gap_start is not None:
         col_gap_max = max(col_gap_max, right - col_gap_start)
-    has_vertical_gap = (col_gap_max / w) >= min_gap_ratio
+    has_vertical_gap = (col_gap_max / w) >= WHITE_GAP_RATIO
 
     return has_horizontal_gap or has_vertical_gap
 
