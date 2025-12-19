@@ -8,10 +8,11 @@ from scipy.spatial import KDTree
 from models.box import Box
 
 BORDER: int = 5
+IOU_THRESH: float = 0.7
 COVER_THRESH: float = 0.95
 
 
-def has_horizontal_white_gap(
+def has_white_gap(
     image: Image.Image,
     box: Box,
     *,
@@ -24,27 +25,40 @@ def has_horizontal_white_gap(
     h, w = arr.shape
 
     binary = arr < 128
-    black_ratio_per_row = binary.sum(axis=1) / w
+    black_ratio_per_row, black_ratio_per_column = binary.sum(axis=1) / w, binary.sum(axis=0) / h
 
-    top = int(h * margin_ratio)
-    bottom = int(h * (1 - margin_ratio))
+    top, bottom = int(h * margin_ratio), int(h * (1 - margin_ratio))
+    left, right = int(w * margin_ratio), int(w * (1 - margin_ratio))
 
-    gap_start = None
-    max_gap = 0
-
+    row_gap_start = None
+    row_gap_max = 0
     for y in range(top, bottom):
         if black_ratio_per_row[y] <= white_ratio_thresh:
-            if gap_start is None:
-                gap_start = y
+            if row_gap_start is None:
+                row_gap_start = y
         else:
-            if gap_start is not None:
-                max_gap = max(max_gap, y - gap_start)
-                gap_start = None
+            if row_gap_start is not None:
+                row_gap_max = max(row_gap_max, y - row_gap_start)
+                row_gap_start = None
+    if row_gap_start is not None:
+        row_gap_max = max(row_gap_max, bottom - row_gap_start)
+    has_horizontal_gap = (row_gap_max / h) >= min_gap_ratio
 
-    if gap_start is not None:
-        max_gap = max(max_gap, bottom - gap_start)
+    col_gap_start = None
+    col_gap_max = 0
+    for x in range(left, right):
+        if black_ratio_per_column[x] <= white_ratio_thresh:
+            if col_gap_start is None:
+                col_gap_start = x
+        else:
+            if col_gap_start is not None:
+                col_gap_max = max(col_gap_max, x - col_gap_start)
+                col_gap_start = None
+    if col_gap_start is not None:
+        col_gap_max = max(col_gap_max, right - col_gap_start)
+    has_vertical_gap = (col_gap_max / w) >= min_gap_ratio
 
-    return (max_gap / h) >= min_gap_ratio
+    return has_horizontal_gap or has_vertical_gap
 
 
 def detect_image(
@@ -52,8 +66,6 @@ def detect_image(
     W_RANGE: Optional[tuple[int, int]] = None,
     H_RANGE: Optional[tuple[int, int]] = None,
 ) -> list[Box]:
-    IOU_THRESH = 0.7
-
     # Step 1. binarization and connected component analysis
     image = Image.open(image_path).convert("L")
     bw = image.point(lambda x: 0 if x < 128 else 255, "1")
@@ -167,7 +179,7 @@ def detect_image(
     final: list[Box] = []
 
     for box in sorted_candidates:
-        if has_horizontal_white_gap(image, box):
+        if has_white_gap(image, box):
             continue
         if any(iou(box, kept) >= IOU_THRESH for kept in final):
             continue
