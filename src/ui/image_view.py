@@ -53,6 +53,36 @@ class ImageView(QGraphicsView):
                 if item in self.box_items:
                     self.box_items.remove(item)
 
+    def select_box(self, scene_pos: QPoint) -> None:
+        for item in self.box_items:
+            item.setSelected(False)
+
+        candidates: list[tuple[float, BoxItem]] = []
+        for item in self.scene().items(scene_pos):
+            if isinstance(item, BoxItem):
+                rect = item.sceneBoundingRect()
+                if rect.contains(scene_pos):
+                    area = rect.width() * rect.height()
+                    candidates.append((area, item))
+        if candidates:
+            _, smallest = min(candidates, key=lambda pair: pair[0])
+            smallest.setSelected(not smallest.isSelected())
+
+    def fit_to_view(self) -> None:
+        scene_rect = self.sceneRect()
+        self.resetTransform()
+        self.fitInView(scene_rect, Qt.AspectRatioMode.KeepAspectRatio)
+        self._zoom = self.transform().m11()
+        self.zoom_changed.emit(f"Zoom: {(self._zoom * 100):.2f}%")
+
+    def zoom_to_rect(self, rect: QRect) -> None:
+        if rect.isNull() or rect.width() < 5 or rect.height() < 5:
+            return
+        self.resetTransform()
+        self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+        self._zoom = self.transform().m11()
+        self.zoom_changed.emit(f"Zoom: {(self._zoom * 100):.2f}%")
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton or event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             self._select_mode = True
@@ -91,7 +121,7 @@ class ImageView(QGraphicsView):
 
             is_click = width < 5 and height < 5
             if is_click:
-                self._handle_click(end_scene_point)
+                self.select_box(end_scene_point)
 
             self._rubber.hide()
             rect_view = QRect(self.mapFromScene(self._origin_scene), event.pos()).normalized()
@@ -102,6 +132,9 @@ class ImageView(QGraphicsView):
                 if modifiers & Qt.KeyboardModifier.ShiftModifier:
                     # Shift + drag to select boxes
                     self.selection_finished.emit(scene_rect)
+                elif modifiers & Qt.KeyboardModifier.ControlModifier:
+                    # Ctrl + drag to zoom to rect
+                    self.zoom_to_rect(scene_rect)
                 else:
                     # normal drag to draw box
                     for item in self.scene().items(scene_rect):
@@ -112,21 +145,6 @@ class ImageView(QGraphicsView):
             self._select_mode = False
             return
         super().mouseReleaseEvent(event)
-
-    def _handle_click(self, scene_pos: QPoint) -> None:
-        for item in self.box_items:
-            item.setSelected(False)
-
-        candidates: list[tuple[float, BoxItem]] = []
-        for item in self.scene().items(scene_pos):
-            if isinstance(item, BoxItem):
-                rect = item.sceneBoundingRect()
-                if rect.contains(scene_pos):
-                    area = rect.width() * rect.height()
-                    candidates.append((area, item))
-        if candidates:
-            _, smallest = min(candidates, key=lambda pair: pair[0])
-            smallest.setSelected(not smallest.isSelected())
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         delta = event.angleDelta().y()
@@ -165,10 +183,3 @@ class ImageView(QGraphicsView):
     def drawBackground(self, painter: QPainter, rect: QRect) -> None:
         painter.fillRect(rect, QBrush(Qt.GlobalColor.lightGray))
         super().drawBackground(painter, rect)
-
-    def fit_to_view(self) -> None:
-        scene_rect = self.sceneRect()
-        self.resetTransform()
-        self.fitInView(scene_rect, Qt.AspectRatioMode.KeepAspectRatio)
-        self._zoom = self.transform().m11()
-        self.zoom_changed.emit(f"Zoom: {(self._zoom * 100):.2f}%")
