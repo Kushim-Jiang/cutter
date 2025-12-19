@@ -32,7 +32,6 @@ def iou_data(a: Box, b: Box) -> tuple[float, float, float]:
 
 IOU_THRESH: float = 0.7
 COVER_THRESH: float = 0.95
-AREA_RATIO_THRESH: float = 0.75
 
 
 def iou(a: Box, b: Box) -> float:
@@ -55,7 +54,7 @@ def coverage_deduplication(boxes: list[Box]) -> list[Box]:
     for box in sorted_boxes:
         drop = False
         for kept in final_boxes:
-            if coverage_ratio(box, kept) > COVER_THRESH and box.area / kept.area < AREA_RATIO_THRESH:
+            if coverage_ratio(box, kept) > COVER_THRESH:
                 drop = True
                 break
         if not drop:
