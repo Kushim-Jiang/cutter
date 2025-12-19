@@ -156,7 +156,7 @@ def detect_image(
             candidates.append(best_valid)
 
     # Step 4. deduplication
-    sorted_candidates = sorted(candidates, key=lambda b: b.w * b.h, reverse=True)
+    sorted_candidates = sorted(candidates, key=lambda b: b.area, reverse=True)
     final: list[Box] = []
 
     for box in sorted_candidates:

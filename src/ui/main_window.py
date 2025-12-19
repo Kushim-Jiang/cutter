@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 
 from methods.deskew import auto_deskew
 from methods.detector import detect_image, detect_selection
-from models.box import COVER_THRESH, Box, coverage_ratio
+from models.box import Box, coverage_deduplication
 from models.state import AppState
 from ui.box_item import BoxItem, sort_reading_order
 from ui.image_view import ImageView
@@ -242,17 +242,7 @@ class MainWindow(QMainWindow):
             if w_min < w_max and h_min < h_max and max(w_max, h_max) > 0:
                 boxes.extend(detect_image(self.state.current, W_RANGE=(w_min, w_max), H_RANGE=(h_min, h_max)))
 
-        sorted_boxes = sorted(boxes, key=lambda b: b.x * b.y)
-        final_boxes: list[Box] = []
-        for box in sorted_boxes:
-            drop = False
-            for kept in final_boxes:
-                if coverage_ratio(box, kept) > COVER_THRESH and (box.w * box.h) / (kept.w * kept.h) < 0.75:
-                    drop = True
-                    break
-            if not drop:
-                final_boxes.append(box)
-
+        final_boxes = coverage_deduplication(boxes)
         self.state.images[self.state.current] = final_boxes
         self.image_view.load_image(self.state.current)
         self.image_view.load_boxes(final_boxes)
