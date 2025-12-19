@@ -99,14 +99,15 @@ class ImageView(QGraphicsView):
             scene_rect = self.mapToScene(rect_view).boundingRect().toRect()
 
             modifiers = event.modifiers()
-            if modifiers & Qt.KeyboardModifier.ShiftModifier:
-                # Shift + drag to select boxes
-                for item in self.scene().items(scene_rect):
-                    if isinstance(item, BoxItem):
-                        item.setSelected(True)
-            elif event.button() == Qt.MouseButton.LeftButton:
-                # normal drag to draw box
-                self.selection_finished.emit(scene_rect)
+            if event.button() == Qt.MouseButton.LeftButton:
+                if modifiers & Qt.KeyboardModifier.ShiftModifier:
+                    # Shift + drag to select boxes
+                    self.selection_finished.emit(scene_rect)
+                else:
+                    # normal drag to draw box
+                    for item in self.scene().items(scene_rect):
+                        if isinstance(item, BoxItem):
+                            item.setSelected(True)
 
             self._origin_scene = None
             self._select_mode = False
