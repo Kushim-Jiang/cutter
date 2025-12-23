@@ -17,6 +17,7 @@ class ImageView(QGraphicsView):
     selection_finished = Signal(QRect)
     pos_str = Signal(str)
     sel_str = Signal(str)
+    box_str = Signal(str)
     zoom_changed = Signal(str)
     save = Signal()
 
@@ -97,6 +98,7 @@ class ImageView(QGraphicsView):
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         scene_pos = self.mapToScene(event.pos())
         self.pos_str.emit(f"Pos: ({int(scene_pos.x())}, {int(scene_pos.y())})")
+        self.box_str.emit(f"Box: {len(self.box_items)}")
 
         if self._select_mode and self._origin_scene is not None:
             x0, y0 = self._origin_scene.x(), self._origin_scene.y()
