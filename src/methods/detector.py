@@ -9,6 +9,7 @@ from models.box import IOU_THRESH, Box, iou
 
 BORDER: int = 5
 WHITE_GAP_RATIO: float = 0.12
+MIN_AREA: int = 20
 
 
 def has_white_gap(
@@ -84,6 +85,7 @@ def detect_image(
         visited.add((sx, sy))
         min_x = max_x = sx
         min_y = max_y = sy
+        count = 0
 
         while stack:
             x, y = stack.pop()
@@ -95,14 +97,14 @@ def detect_image(
                     max_x = max(max_x, nx)
                     min_y = min(min_y, ny)
                     max_y = max(max_y, ny)
-
+                    count += 1
         return Box(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
 
     for x in range(width):
         for y in range(height):
             if pixels[x, y] == 0 and (x, y) not in visited:
                 box = bfs(x, y)
-                if box.w > 2 and box.h > 2:
+                if box.area >= MIN_AREA:
                     components.append(box)
 
     if not components:
