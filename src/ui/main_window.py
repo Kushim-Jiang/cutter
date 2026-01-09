@@ -28,6 +28,7 @@ from models.box import Box, coverage_deduplication
 from models.state import AppState
 from ui.box_item import BoxItem, sort_reading_order
 from ui.image_view import ImageView
+from ui.table_view import TextTableDialog
 
 
 class TableWidget(QTableWidget):
@@ -90,6 +91,10 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout()
         left_layout.addWidget(open_btn)
         left_layout.addWidget(self.file_list)
+
+        table_btn = QPushButton("Text Table")
+        table_btn.clicked.connect(self.open_text_table)
+        left_layout.addWidget(table_btn)
 
         # center layout
         self.image_view = ImageView()
@@ -163,6 +168,10 @@ class MainWindow(QMainWindow):
         files, _ = QFileDialog.getOpenFileNames(self, "Open Images", "", "Images (*.png *.jpg *.jpeg)")
         if files:
             self.add_files(files)
+
+    def open_text_table(self) -> None:
+        dialog = TextTableDialog(self)
+        dialog.exec()
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
