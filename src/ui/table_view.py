@@ -1,7 +1,7 @@
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, cast
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QSize, Qt
 from PySide6.QtGui import QKeyEvent, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -121,9 +121,9 @@ class EditableTable(QTableWidget):
         edit.setFrame(False)
         self.setCellWidget(row, col, edit)
 
-    def eventFilter(self, obj: QTableWidget, event: QKeyEvent) -> bool:
-        if event.type() == QKeyEvent.Type.KeyPress:
-            if event.matches(QKeySequence.StandardKey.Paste):
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.KeyPress:
+            if isinstance(event, QKeyEvent) and event.matches(QKeySequence.StandardKey.Paste):
                 row, col = self.currentRow(), self.currentColumn()
                 if col >= TEXT_COL_START:
                     self._paste_multiline(row, col)
@@ -142,8 +142,12 @@ class EditableTable(QTableWidget):
                 self.insertRow(self.rowCount())
                 self._init_row(self.rowCount() - 1)
 
-            self.item(row, 0).setText(str(path))
-            img_cell: ImageCellWidget = self.cellWidget(row, 1)
+            item = self.item(row, 0)
+            if item is None:
+                item = QTableWidgetItem("")
+                self.setItem(row, 0, item)
+            item.setText(str(path))
+            img_cell = cast(ImageCellWidget, self.cellWidget(row, 1))
             img_cell.set_image(path)
 
     # ----------------------------
@@ -160,10 +164,7 @@ class EditableTable(QTableWidget):
             return
 
         # Shift + Enter: insert column
-        if (
-            event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
-            and event.modifiers() & Qt.KeyboardModifier.ShiftModifier
-        ):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             if col >= 1:
                 self.insert_text_column(col + 1)
             return
@@ -192,7 +193,7 @@ class EditableTable(QTableWidget):
     # ----------------------------
 
     def _split_text_cell(self, row: int, col: int) -> None:
-        widget: QLineEdit = self.cellWidget(row, col)
+        widget = cast(QLineEdit, self.cellWidget(row, col))
         text = widget.text()
         cursor = widget.cursorPosition()
 

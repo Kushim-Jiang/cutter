@@ -178,11 +178,7 @@ class MainWindow(QMainWindow):
             event.acceptProposedAction()
 
     def dropEvent(self, event: QDropEvent) -> None:
-        files = [
-            url.toLocalFile()
-            for url in event.mimeData().urls()
-            if url.toLocalFile().lower().endswith((".png", ".jpg", ".jpeg"))
-        ]
+        files = [url.toLocalFile() for url in event.mimeData().urls() if url.toLocalFile().lower().endswith((".png", ".jpg", ".jpeg"))]
         if files:
             self.add_files(files)
 
@@ -207,6 +203,7 @@ class MainWindow(QMainWindow):
 
         path = Path(current.text())
         img_cv = cv2.imread(str(path))
+        assert img_cv is not None, f"Failed to load image: {path}"
         deskew_img = auto_deskew(img_cv)
 
         deskew_dir = path.parent.parent / "deskew"
@@ -244,10 +241,14 @@ class MainWindow(QMainWindow):
         boxes: list[Box] = []
         for row in range(self.rule_table.rowCount()):
             try:
-                w_min = int(self.rule_table.item(row, 0).text() or 0)
-                w_max = int(self.rule_table.item(row, 1).text() or 0)
-                h_min = int(self.rule_table.item(row, 2).text() or 0)
-                h_max = int(self.rule_table.item(row, 3).text() or 0)
+                item_00 = self.rule_table.item(row, 0)
+                item_01 = self.rule_table.item(row, 1)
+                item_02 = self.rule_table.item(row, 2)
+                item_03 = self.rule_table.item(row, 3)
+                w_min = int(item_00.text() or 0) if item_00 is not None else 0
+                w_max = int(item_01.text() or 0) if item_01 is not None else 0
+                h_min = int(item_02.text() or 0) if item_02 is not None else 0
+                h_max = int(item_03.text() or 0) if item_03 is not None else 0
             except ValueError:
                 continue
 
@@ -268,6 +269,7 @@ class MainWindow(QMainWindow):
         out_dir.mkdir(parents=True, exist_ok=True)
 
         img = cv2.imread(str(self.state.current))
+        assert img is not None, f"Failed to load image for export: {self.state.current}"
         ordered_boxes = sort_reading_order(self.image_view.box_items, img.shape[1], column_count)
 
         for idx, box_item in enumerate(ordered_boxes, 1):

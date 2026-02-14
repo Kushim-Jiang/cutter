@@ -67,7 +67,9 @@ def detect_image(
 ) -> list[Box]:
     # Step 1. binarization and connected component analysis
     image = Image.open(image_path).convert("L")
-    bw = image.point(lambda x: 0 if x < 128 else 255, "1")
+    arr = np.array(image)
+    bw_arr = (arr < 128).astype(np.uint8) * 255
+    bw = Image.fromarray(bw_arr.astype(np.uint8), mode="L")
     pixels = bw.load()
     width, height = bw.size
 
@@ -90,7 +92,7 @@ def detect_image(
         while stack:
             x, y = stack.pop()
             for nx, ny in neighbors(x, y):
-                if (nx, ny) not in visited and pixels[nx, ny] == 0:
+                if (nx, ny) not in visited and pixels is not None and pixels[nx, ny] == 0:
                     visited.add((nx, ny))
                     stack.append((nx, ny))
                     min_x = min(min_x, nx)
@@ -102,7 +104,7 @@ def detect_image(
 
     for x in range(width):
         for y in range(height):
-            if pixels[x, y] == 0 and (x, y) not in visited:
+            if pixels is not None and pixels[x, y] == 0 and (x, y) not in visited:
                 box = bfs(x, y)
                 if box.area >= MIN_AREA:
                     components.append(box)
@@ -135,15 +137,12 @@ def detect_image(
             if W_RANGE and (current.w > W_RANGE[1]) or H_RANGE and (current.h > H_RANGE[1]):
                 break
 
-            if (
-                W_RANGE
-                and H_RANGE
-                and (W_RANGE[0] <= current.w <= W_RANGE[1] and H_RANGE[0] <= current.h <= H_RANGE[1])
-            ):
+            if W_RANGE and H_RANGE and (W_RANGE[0] <= current.w <= W_RANGE[1] and H_RANGE[0] <= current.h <= H_RANGE[1]):
                 best_valid = current
 
             center = np.array([[current.x + current.w / 2, current.y + current.h / 2]])
             _, indices = tree.query(center, k=min(8, len(components)))
+            indices = np.array(indices).reshape(-1)
             found = False
             for idx in indices[0]:
                 if idx not in used_indices:

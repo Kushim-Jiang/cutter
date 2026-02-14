@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QKeyEvent, QKeySequence, QMouseEvent, QPainter, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QRubberBand
 
@@ -87,7 +87,7 @@ class ImageView(QGraphicsView):
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton or event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             self._select_mode = True
-            self._origin_scene = self.mapToScene(event.pos())
+            self._origin_scene = self.mapToScene(event.pos()).toPoint()
             origin_view_pos = event.pos()
             self._rubber.setGeometry(QRect(origin_view_pos, QSize()))
             self._rubber.show()
@@ -182,6 +182,7 @@ class ImageView(QGraphicsView):
 
         super().keyPressEvent(event)
 
-    def drawBackground(self, painter: QPainter, rect: QRect) -> None:
-        painter.fillRect(rect, QBrush(Qt.GlobalColor.lightGray))
+    def drawBackground(self, painter: QPainter, rect: QRectF | QRect) -> None:
+        fill_rect = QRectF(rect) if isinstance(rect, QRect) else rect
+        painter.fillRect(fill_rect, QBrush(Qt.GlobalColor.lightGray))
         super().drawBackground(painter, rect)
