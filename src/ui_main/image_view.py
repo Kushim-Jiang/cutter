@@ -6,7 +6,7 @@ from PySide6.QtGui import QBrush, QKeyEvent, QKeySequence, QMouseEvent, QPainter
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QRubberBand
 
 from models.box import Box
-from ui.box_item import BoxItem
+from ui_main.box_item import BoxItem
 
 ZOOM_FACTOR = 1.2
 

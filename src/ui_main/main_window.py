@@ -26,9 +26,9 @@ from methods.deskew import auto_deskew
 from methods.detector import detect_image, detect_selection
 from models.box import Box, coverage_deduplication
 from models.state import AppState
-from ui.box_item import BoxItem, sort_reading_order
-from ui.image_view import ImageView
-from ui.table_view import TextTableDialog
+from ui_main.box_item import BoxItem, sort_reading_order
+from ui_main.image_view import ImageView
+from ui_table.table_view import TextTableDialog
 
 
 class TableWidget(QTableWidget):
