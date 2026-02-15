@@ -4,7 +4,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QLabel
 
-ROW_HEIGHT = 20
+ROW_HEIGHT = 30
 
 
 class ImageCellWidget(QLabel):
@@ -14,10 +14,10 @@ class ImageCellWidget(QLabel):
         self.setFixedSize(ROW_HEIGHT, ROW_HEIGHT)
         self._path: Path | None = None
 
-    def set_image(self, path: Path | None) -> None:
-        self._path = path
-        if path and path.exists():
-            pix = QPixmap(str(path))
+    def set_image(self, path: str | Path | None) -> None:
+        self._path = Path(path) if path else None
+        if self._path and self._path.exists():
+            pix = QPixmap(str(self._path))
             if not pix.isNull():
                 self.setPixmap(
                     pix.scaled(

@@ -1,145 +1,66 @@
-from __future__ import annotations
-
 from pathlib import Path
 
 
 class Table:
-    IMAGE_PATH_COL = 0
-    IMAGE_COL = 1
-    TEXT_COL_START = 2
+    IMG_COL = 0
+    CHR_COL = 1
+    CMT_COL = 2
 
     def __init__(self) -> None:
+        # fixed 3 columns: [image, character, comment]
         self.cells: list[list[str]] = []
 
-    # ----------------------------
-    # structure helpers
-    # ----------------------------
-
-    def row_count(self) -> int:
+    def __len__(self) -> int:
         return len(self.cells)
 
-    def column_count(self) -> int:
-        if not self.cells:
-            return Table.TEXT_COL_START
-        return len(self.cells[0])
+    def clear(self) -> None:
+        self.cells = []
 
-    def set_rows(self, count: int) -> None:
-        """Resize row count."""
-        self.cells = self.cells[:count]
-        while len(self.cells) < count:
-            self.cells.append(["", ""])  # path + image placeholder
+    def add_row(self, image: str = "", character: str = "", comment: str = "") -> None:
+        self.cells.append([image, character, comment])
 
-    def set_columns(self, count: int) -> None:
-        """Resize column count."""
-        for i, row in enumerate(self.cells):
-            self.cells[i] = row[:count]
-            while len(self.cells[i]) < count:
-                self.cells[i].append("")
+    def set_row(self, row: int, image: str = "", character: str = "", comment: str = "") -> None:
+        if 0 <= row < self.__len__():
+            self.cells[row] = [image, character, comment]
+        else:
+            self.add_row(image, character, comment)
 
-    def ensure_cell(self, row: int, col: int) -> None:
-        self.set_rows(row + 1)
-        self.set_columns(col + 1)
+    def get_cell(self, row: int, col: int) -> str:
+        if 0 <= row < self.__len__() and 0 <= col < 3:
+            return self.cells[row][col]
+        return ""
 
-    # ----------------------------
-    # image operations
-    # ----------------------------
+    def set_cell(self, row: int, col: int, value: str) -> None:
+        if 0 <= row < self.__len__() and 0 <= col < 3:
+            self.cells[row][col] = value
 
-    def set_image(self, row: int, path: Path) -> None:
-        self.set_rows(row + 1)
-        self.cells[row][Table.IMAGE_PATH_COL] = str(path)
+    def import_images(self, paths: list[Path]) -> None:
+        self.clear()
+        sorted_paths = sorted(paths, key=lambda p: p.name)
+        for path in sorted_paths:
+            self.add_row(image=str(path))
 
-    def get_image_path(self, row: int) -> str:
-        if row >= self.row_count():
-            return ""
-        return self.cells[row][Table.IMAGE_PATH_COL]
+    def import_tsv(self, tsv_path: Path) -> None:
+        self.clear()
+        if not tsv_path.exists():
+            raise FileNotFoundError(f"tsv file not found: {tsv_path}")
 
-    # ----------------------------
-    # text access
-    # ----------------------------
+        with open(tsv_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
 
-    def get_text(self, row: int, col: int) -> str:
-        if row >= self.row_count():
-            return ""
-        if col >= len(self.cells[row]):
-            return ""
-        return self.cells[row][col]
+        for line in lines:
+            parts = line.strip().split("\t")
+            image = parts[self.IMG_COL] if len(parts) > self.IMG_COL else ""
+            character = parts[self.CHR_COL] if len(parts) > self.CHR_COL else ""
+            comment = parts[self.CMT_COL] if len(parts) > self.CMT_COL else ""
+            self.add_row(image, character, comment)
 
-    def set_text(self, row: int, col: int, text: str) -> None:
-        self.ensure_cell(row, col)
-        self.cells[row][col] = text
-
-    # ----------------------------
-    # editing logic
-    # ----------------------------
-
-    def split_cell(self, row: int, col: int, cursor: int) -> None:
-        """Split a cell into current row + next row."""
-        self.ensure_cell(row, col)
-
-        text = self.cells[row][col]
-        before = text[:cursor]
-        after = text[cursor:]
-
-        self.cells[row][col] = before
-
-        # always ensure next row exists
-        self.set_rows(self.row_count() + 1)
-        self.set_columns(col + 1)
-
-        # shift down
-        for r in range(self.row_count() - 1, row + 1, -1):
-            self.cells[r][col] = self.cells[r - 1][col]
-
-        self.cells[row + 1][col] = after
-
-    def merge_with_next(self, row: int, col: int) -> None:
-        if row >= self.row_count() - 1:
-            return
-
-        self.ensure_cell(row + 1, col)
-
-        self.cells[row][col] += self.cells[row + 1][col]
-
-        for r in range(row + 1, self.row_count() - 1):
-            self.cells[r][col] = self.cells[r + 1][col]
-
-        self.cells[-1][col] = ""
-
-    def paste_multiline(self, row: int, col: int, text: str) -> None:
-        lines = text.splitlines()
-        self.set_rows(row + len(lines))
-        self.set_columns(col + 1)
-
-        for i, line in enumerate(lines):
-            self.cells[row + i][col] = line
-
-    # ----------------------------
-    # column operations
-    # ----------------------------
-
-    def insert_column(self, col: int) -> None:
-        self.set_columns(col)
+    def export_tsv(self, export_path: Path) -> None:
+        lines = []
         for row in self.cells:
-            row.insert(col, "")
-
-    def remove_column(self, col: int) -> None:
-        """Remove column but protect structure columns."""
-        if col < Table.TEXT_COL_START:
-            return
-
-        for row in self.cells:
-            if len(row) > col:
-                row.pop(col)
-
-    # ----------------------------
-    # export
-    # ----------------------------
-
-    def export_tsv(self, path: Path) -> None:
-        lines: list[str] = []
-
-        for row in self.cells:
-            if any(cell.strip() for cell in row):
-                lines.append("\t".join(row))
-
-        path.write_text("\n".join(lines), encoding="utf-8")
+            processed_cells = []
+            for cell in row:
+                processed = cell.replace("\t", ">").replace("\n", ">>")
+                processed_cells.append(processed)
+            lines.append("\t".join(processed_cells))
+        export_path.write_text("\n".join(lines), encoding="utf-8")
