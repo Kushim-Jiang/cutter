@@ -16,14 +16,14 @@ class Table:
     def clear(self) -> None:
         self.cells = []
 
-    def add_row(self, image: str = "", character: str = "", comment: str = "") -> None:
+    def append_row(self, image: str = "", character: str = "", comment: str = "") -> None:
         self.cells.append([image, character, comment])
 
     def set_row(self, row: int, image: str = "", character: str = "", comment: str = "") -> None:
         if 0 <= row < self.__len__():
             self.cells[row] = [image, character, comment]
         else:
-            self.add_row(image, character, comment)
+            self.append_row(image, character, comment)
 
     def get_cell(self, row: int, col: int) -> str:
         if 0 <= row < self.__len__() and 0 <= col < 3:
@@ -38,7 +38,7 @@ class Table:
         self.clear()
         sorted_paths = sorted(paths, key=lambda p: p.name)
         for path in sorted_paths:
-            self.add_row(image=str(path))
+            self.append_row(image=str(path))
 
     def import_tsv(self, tsv_path: Path) -> None:
         self.clear()
@@ -53,7 +53,7 @@ class Table:
             image = parts[self.IMG_COL] if len(parts) > self.IMG_COL else ""
             character = parts[self.CHR_COL] if len(parts) > self.CHR_COL else ""
             comment = parts[self.CMT_COL] if len(parts) > self.CMT_COL else ""
-            self.add_row(image, character, comment)
+            self.append_row(image, character, comment)
 
     def export_tsv(self, export_path: Path) -> None:
         lines = []
