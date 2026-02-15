@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import QEvent, QObject
 from PySide6.QtGui import QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -13,13 +13,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
 )
 
 from models.table import Table as TableModel
-from ui_table.image_cell import ROW_HEIGHT, ImageCellWidget
+from ui_table.image_cell import ROW_HEIGHT
 from ui_table.table_edit import Editor as TableEditor
+from ui_table.visible_rows import RowManager
 
 
 class TextTableDialog(QDialog):
@@ -30,6 +30,7 @@ class TextTableDialog(QDialog):
 
         self.table_model = TableModel()
         self.table_widget = self._create_table_widget()
+        self._inited_rows: set[int] = set()
 
         self.import_images_btn = QPushButton("Import Images")
         self.import_tsv_btn = QPushButton("Import TSV")
@@ -64,50 +65,14 @@ class TextTableDialog(QDialog):
         table.verticalHeader().setVisible(False)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+
+        # update visible rows when scrolling or resizing
+        table.verticalScrollBar().valueChanged.connect(lambda _: self._ensure_visible_rows())
+        table.viewport().installEventFilter(self)
         return table
 
-    def _init_table_row(self, row: int) -> None:
-        self.table_widget.setRowHeight(row, ROW_HEIGHT)
-
-        image_cell = ImageCellWidget(self.table_widget)
-        image_cell.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.table_widget.setCellWidget(row, TableModel.IMG_COL, image_cell)
-        placeholder_item = QTableWidgetItem()
-        placeholder_item.setFlags(placeholder_item.flags() & ~(Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsSelectable))
-        self.table_widget.setItem(row, TableModel.IMG_COL, placeholder_item)
-
-        char_edit = QLineEdit()
-        char_edit.setFrame(False)
-        char_edit.setStyleSheet("font-size: 22px;")
-        char_edit.installEventFilter(self)
-        char_edit.textChanged.connect(lambda text, r=row, c=TableModel.CHR_COL: self.table_model.set_cell(r, c, text))
-        self.table_widget.setCellWidget(row, TableModel.CHR_COL, char_edit)
-
-        comment_edit = QLineEdit()
-        comment_edit.setFrame(False)
-        comment_edit.installEventFilter(self)
-        comment_edit.textChanged.connect(lambda text, r=row, c=TableModel.CMT_COL: self.table_model.set_cell(r, c, text))
-        self.table_widget.setCellWidget(row, TableModel.CMT_COL, comment_edit)
-
-    def sync_table_view(self) -> None:
-        self.table_widget.setRowCount(0)
-        row_count = len(self.table_model)
-        self.table_widget.setRowCount(row_count)
-
-        for row in range(row_count):
-            self._init_table_row(row)
-
-            image_path = self.table_model.get_cell(row, TableModel.IMG_COL)
-            image_cell = cast(ImageCellWidget, self.table_widget.cellWidget(row, TableModel.IMG_COL))
-            image_cell.set_image(image_path)
-
-            char_text = self.table_model.get_cell(row, TableModel.CHR_COL)
-            char_edit = cast(QLineEdit, self.table_widget.cellWidget(row, TableModel.CHR_COL))
-            char_edit.setText(char_text)
-
-            comment_text = self.table_model.get_cell(row, TableModel.CMT_COL)
-            comment_edit = cast(QLineEdit, self.table_widget.cellWidget(row, TableModel.CMT_COL))
-            comment_edit.setText(comment_text)
+    def _ensure_visible_rows(self) -> None:
+        RowManager.ensure_visible_rows(self.table_widget, self.table_model, self._inited_rows, self)
 
     def _get_edit_widget_position(self, edit_widget: QLineEdit) -> tuple[int, int]:
         for row in range(self.table_widget.rowCount()):
@@ -117,7 +82,15 @@ class TextTableDialog(QDialog):
                     return row, col
         return -1, -1
 
+    def sync_table_view(self) -> None:
+        RowManager.sync_table_view(self.table_widget, self.table_model, self._inited_rows, ROW_HEIGHT)
+        self._ensure_visible_rows()
+
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if obj == self.table_widget.viewport() and event.type() == QEvent.Type.Resize:
+            self._ensure_visible_rows()
+            return super().eventFilter(obj, event)
+
         if isinstance(obj, QLineEdit) and event.type() == QEvent.Type.KeyPress:
             current_row, current_col = self._get_edit_widget_position(obj)
             if current_col not in [TableModel.CHR_COL, TableModel.CMT_COL]:
