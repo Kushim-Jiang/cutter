@@ -2,9 +2,10 @@ from pathlib import Path
 
 
 class Table:
-    IMG_COL = 0
-    CHR_COL = 1
-    CMT_COL = 2
+    # model column indices (0-based): image, character, comment
+    IMG = 0
+    CHR = 1
+    CMT = 2
 
     def __init__(self) -> None:
         # fixed 3 columns: [image, character, comment]
@@ -50,9 +51,9 @@ class Table:
 
         for line in lines:
             parts = line.strip().split("\t")
-            image = parts[self.IMG_COL] if len(parts) > self.IMG_COL else ""
-            character = parts[self.CHR_COL] if len(parts) > self.CHR_COL else ""
-            comment = parts[self.CMT_COL] if len(parts) > self.CMT_COL else ""
+            image = parts[self.IMG] if len(parts) > self.IMG else ""
+            character = parts[self.CHR] if len(parts) > self.CHR else ""
+            comment = parts[self.CMT] if len(parts) > self.CMT else ""
             self.append_row(image, character, comment)
 
     def export_tsv(self, export_path: Path) -> None:
@@ -64,3 +65,23 @@ class Table:
                 processed_cells.append(processed)
             lines.append("\t".join(processed_cells))
         export_path.write_text("\n".join(lines), encoding="utf-8")
+
+    def swap_rows(self, a: int, b: int) -> None:
+        """Swap two rows in-place if both indices are valid."""
+        if a == b:
+            return
+        if 0 <= a < self.__len__() and 0 <= b < self.__len__():
+            self.cells[a], self.cells[b] = self.cells[b], self.cells[a]
+
+    def swap_cells(self, row_a: int, col_a: int, row_b: int, col_b: int) -> None:
+        """Swap contents of two cells. Model columns are 0-based (IMG=0, CHR=1, CMT=2)."""
+        if row_a == row_b and col_a == col_b:
+            return
+
+        if not (0 <= row_a < self.__len__() and 0 <= row_b < self.__len__()):
+            return
+
+        if not (0 <= col_a < 3 and 0 <= col_b < 3):
+            return
+
+        self.cells[row_a][col_a], self.cells[row_b][col_b] = self.cells[row_b][col_b], self.cells[row_a][col_a]

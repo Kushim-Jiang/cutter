@@ -52,15 +52,20 @@ class TextTableDialog(QDialog):
 
     def _create_table_widget(self) -> QTableWidget:
         table = QTableWidget()
-        table.setColumnCount(3)
-        table.setHorizontalHeaderLabels(["Images", "Characters", "Comments"])
+        table.setColumnCount(4)
+        # first: row number (no title), second: image placeholder (no title)
+        table.setHorizontalHeaderLabels(["", "", "Characters", "Comments"])
         table.setRowCount(0)
 
         header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(0, ROW_HEIGHT + 10)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        # row-number column narrow (col 0)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.resizeSection(0, 40)
+        # image column fixed to thumbnail height (model IMG_COL + 1)
+        header.setSectionResizeMode(TableModel.IMG + 1, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(TableModel.IMG + 1, ROW_HEIGHT + 10)
+        header.setSectionResizeMode(TableModel.CHR + 1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(TableModel.CMT + 1, QHeaderView.ResizeMode.Stretch)
 
         table.verticalHeader().setVisible(False)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
@@ -76,10 +81,12 @@ class TextTableDialog(QDialog):
 
     def _get_edit_widget_position(self, edit_widget: QLineEdit) -> tuple[int, int]:
         for row in range(self.table_widget.rowCount()):
-            for col in [TableModel.CHR_COL, TableModel.CMT_COL]:
-                widget = self.table_widget.cellWidget(row, col)
-                if widget == edit_widget:
-                    return row, col
+            widget = self.table_widget.cellWidget(row, TableModel.CHR + 1)
+            if widget == edit_widget:
+                return row, TableModel.CHR
+            widget = self.table_widget.cellWidget(row, TableModel.CMT + 1)
+            if widget == edit_widget:
+                return row, TableModel.CMT
         return -1, -1
 
     def sync_table_view(self) -> None:
@@ -93,13 +100,17 @@ class TextTableDialog(QDialog):
 
         if isinstance(obj, QLineEdit) and event.type() == QEvent.Type.KeyPress:
             current_row, current_col = self._get_edit_widget_position(obj)
-            if current_col not in [TableModel.CHR_COL, TableModel.CMT_COL]:
+            if current_col not in [TableModel.CHR, TableModel.CMT]:
                 return super().eventFilter(obj, event)
 
             event = cast(QKeyEvent, event)
 
-            # ctrl + v: paste
-            if event.matches(QKeySequence.StandardKey.Paste):
+            # helper: map model col -> widget col
+            def model_to_widget_col(mcol: int) -> int:
+                return mcol + 1
+
+            # ctrl + b: paste
+            if event.matches(QKeySequence.StandardKey.Bold):
                 clipboard_text = QApplication.clipboard().text()
                 TableEditor.paste_operation(self.table_model, current_row, current_col, clipboard_text)
                 self.sync_table_view()
@@ -107,23 +118,23 @@ class TextTableDialog(QDialog):
                 obj.setCursorPosition(len(obj.text()))
                 return True
 
-            # ctrl + x: merge
-            elif event.matches(QKeySequence.StandardKey.Cut):
+            # ctrl + i: merge
+            elif event.matches(QKeySequence.StandardKey.Italic):
                 TableEditor.merge_operation(self.table_model, current_row, current_col)
                 self.sync_table_view()
-                new_edit = cast(QLineEdit, self.table_widget.cellWidget(current_row, current_col))
+                new_edit = cast(QLineEdit, self.table_widget.cellWidget(current_row, model_to_widget_col(current_col)))
                 if new_edit:
                     new_edit.setFocus()
                     new_edit.setCursorPosition(len(new_edit.text()))
                 return True
 
-            # ctrl + c: split
-            elif event.matches(QKeySequence.StandardKey.Copy):
+            # ctrl + u: split
+            elif event.matches(QKeySequence.StandardKey.Underline):
                 cursor_pos = obj.cursorPosition()
                 current_text = obj.text()
                 TableEditor.split_operation(self.table_model, current_row, current_col, cursor_pos, current_text)
                 self.sync_table_view()
-                new_edit = cast(QLineEdit, self.table_widget.cellWidget(current_row, current_col))
+                new_edit = cast(QLineEdit, self.table_widget.cellWidget(current_row, model_to_widget_col(current_col)))
                 if new_edit:
                     new_edit.setFocus()
                     new_edit.setCursorPosition(0)
@@ -132,6 +143,30 @@ class TextTableDialog(QDialog):
             # ctrl + s: save
             elif event.matches(QKeySequence.StandardKey.Save):
                 self.export_tsv()
+                return True
+
+            # Shift + Up: swap this cell with the one above (same column)
+            elif event.matches(QKeySequence.StandardKey.SelectPreviousLine):
+                if current_row > 0:
+                    self.table_model.swap_cells(current_row, current_col, current_row - 1, current_col)
+                    self.sync_table_view()
+                    target_row = current_row - 1
+                    new_edit = cast(QLineEdit, self.table_widget.cellWidget(target_row, model_to_widget_col(current_col)))
+                    if new_edit:
+                        new_edit.setFocus()
+                        new_edit.setCursorPosition(len(new_edit.text()))
+                return True
+
+            # Shift + Down: swap this cell with the one below (same column)
+            elif event.matches(QKeySequence.StandardKey.SelectNextLine):
+                if current_row < len(self.table_model) - 1:
+                    self.table_model.swap_cells(current_row, current_col, current_row + 1, current_col)
+                    self.sync_table_view()
+                    target_row = current_row + 1
+                    new_edit = cast(QLineEdit, self.table_widget.cellWidget(target_row, model_to_widget_col(current_col)))
+                    if new_edit:
+                        new_edit.setFocus()
+                        new_edit.setCursorPosition(len(new_edit.text()))
                 return True
 
         return super().eventFilter(obj, event)
