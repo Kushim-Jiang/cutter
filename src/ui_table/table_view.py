@@ -36,6 +36,11 @@ class TextTableDialog(QDialog):
         self.import_tsv_btn = QPushButton("Import TSV")
         self.export_tsv_btn = QPushButton("Export TSV")
 
+        self.goto_line_edit = QLineEdit()
+        self.goto_line_edit.setPlaceholderText("Go to line")
+        self.goto_line_edit.setFixedWidth(120)
+        self.goto_line_edit.returnPressed.connect(self.goto_line)
+
         self.import_images_btn.clicked.connect(self.import_images)
         self.import_tsv_btn.clicked.connect(self.import_tsv)
         self.export_tsv_btn.clicked.connect(self.export_tsv)
@@ -43,6 +48,7 @@ class TextTableDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addWidget(self.import_images_btn)
         btn_layout.addWidget(self.import_tsv_btn)
+        btn_layout.addWidget(self.goto_line_edit)
         btn_layout.addStretch()
         btn_layout.addWidget(self.export_tsv_btn)
 
@@ -187,6 +193,38 @@ class TextTableDialog(QDialog):
                 self.import_images_btn.setEnabled(False)
             except Exception as e:
                 print(f"Import TSV failed: {e}")
+
+    def goto_line(self) -> None:
+        text = self.goto_line_edit.text().strip()
+        if not text:
+            return
+        try:
+            n = int(text)
+        except ValueError:
+            return
+
+        target_row = max(0, n - 1)
+        max_row = len(self.table_model) - 1
+        if max_row < 0:
+            return
+        if target_row > max_row:
+            target_row = max_row
+        index = self.table_widget.model().index(target_row, 0)
+        try:
+            self.table_widget.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
+        except Exception:
+            self.table_widget.scrollTo(index)
+
+        # select the row and focus first editable widget if present
+        self.table_widget.setCurrentCell(target_row, 0)
+        editor = self.table_widget.cellWidget(target_row, TableModel.CHR + 1)
+        if editor:
+            try:
+                editor.setFocus()
+                if isinstance(editor, QLineEdit):
+                    editor.setCursorPosition(0)
+            except Exception:
+                pass
 
     def export_tsv(self) -> None:
         file_path, _ = QFileDialog.getSaveFileName(self, "Export TSV", "", "TSV (*.tsv)")
