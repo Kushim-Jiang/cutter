@@ -272,11 +272,26 @@ class MainWindow(QMainWindow):
         assert img is not None, f"Failed to load image for export: {self.state.current}"
         ordered_boxes = sort_reading_order(self.image_view.box_items, img.shape[1], column_count)
 
-        for idx, box_item in enumerate(ordered_boxes, 1):
+        # prepare base name and collect already used indices in output dir
+        base_name = self.state.current.stem.removesuffix('.deskew')
+        used_indices: set[int] = set()
+        for p in out_dir.glob(f"{base_name}_*.png"):
+            try:
+                suffix = p.stem.rsplit("_", 1)[1]
+                used_indices.add(int(suffix))
+            except Exception:
+                continue
+
+        for box_item in ordered_boxes:
             box = box_item.box
             cropped = img[box.y : box.y + box.h, box.x : box.x + box.w]
-            out_path = out_dir / f"{self.state.current.stem.removesuffix('.deskew')}_{idx:03d}.png"
+
+            idx = 1
+            while idx in used_indices:
+                idx += 1
+            out_path = out_dir / f"{base_name}_{idx:03d}.png"
             cv2.imwrite(str(out_path), cropped)
+            used_indices.add(idx)
 
         # go to next image
         next_row = self.file_list.currentRow() + 1
