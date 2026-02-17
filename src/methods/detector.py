@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 from scipy.spatial import KDTree
 
-from models.box import IOU_THRESH, Box, iou
+from models.box import IOU_THRESH, Box
 
 BORDER: int = 5
 WHITE_GAP_RATIO: float = 0.12
@@ -131,11 +131,19 @@ def detect_image(
             found_new = False
             for idx in indices:
                 idx = int(idx)
-                if idx not in used_indices:
-                    used_indices.add(idx)
-                    used_boxes.append(components[idx])
-                    found_new = True
-                    break
+                if idx in used_indices:
+                    continue
+
+                candidate_box = components[idx]
+                tmp_boxes = used_boxes + [candidate_box]
+                tmp_merged = merge_boxes(tmp_boxes)
+                if (has_w_range and tmp_merged.w > W_RANGE[1]) or (has_h_range and tmp_merged.h > H_RANGE[1]):
+                    continue
+
+                used_indices.add(idx)
+                used_boxes.append(candidate_box)
+                found_new = True
+                break
 
         if best_valid:
             candidates.append(best_valid)
@@ -152,8 +160,6 @@ def detect_image(
         idx_int = int(idx)
         box = candidates[idx_int]
         if has_white_gap(image, box):
-            continue
-        if any(iou(box, kept) >= IOU_THRESH for kept in final):
             continue
         final.append(Box(box.x - BORDER, box.y - BORDER, box.w + BORDER * 2, box.h + BORDER * 2))
     return final
