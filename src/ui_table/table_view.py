@@ -222,17 +222,31 @@ class TextTableDialog(QDialog):
         text = self.goto_line_edit.text().strip()
         if not text:
             return
+
         try:
             n = int(text)
+            target_row = max(0, n - 1)
+            max_row = len(self.table_model) - 1
+            if max_row < 0:
+                return
+            if target_row > max_row:
+                target_row = max_row
         except ValueError:
-            return
+            # do downward string search in Characters and Comments
+            query = text.lower()
+            cur = self.table_widget.currentRow()
+            start = cur + 1 if cur >= 0 else 0
+            found = -1
+            for row in range(start, len(self.table_model)):
+                chr_text = self.table_model.get_cell(row, TableModel.CHR) or ""
+                cmt_text = self.table_model.get_cell(row, TableModel.CMT) or ""
+                if query in chr_text.lower() or query in cmt_text.lower():
+                    found = row
+                    break
+            if found == -1:
+                return
+            target_row = found
 
-        target_row = max(0, n - 1)
-        max_row = len(self.table_model) - 1
-        if max_row < 0:
-            return
-        if target_row > max_row:
-            target_row = max_row
         index = self.table_widget.model().index(target_row, 0)
         try:
             self.table_widget.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
