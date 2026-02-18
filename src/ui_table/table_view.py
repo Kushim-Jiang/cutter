@@ -33,6 +33,7 @@ class TextTableDialog(QDialog):
         self._inited_rows: set[int] = set()
 
         self.import_images_btn = QPushButton("Import Images")
+        self.import_folders_btn = QPushButton("Import Folders")
         self.import_tsv_btn = QPushButton("Import TSV")
         self.export_tsv_btn = QPushButton("Export TSV")
 
@@ -42,11 +43,13 @@ class TextTableDialog(QDialog):
         self.goto_line_edit.returnPressed.connect(self.goto_line)
 
         self.import_images_btn.clicked.connect(self.import_images)
+        self.import_folders_btn.clicked.connect(self.import_folders)
         self.import_tsv_btn.clicked.connect(self.import_tsv)
         self.export_tsv_btn.clicked.connect(self.export_tsv)
 
         btn_layout = QHBoxLayout()
         btn_layout.addWidget(self.import_images_btn)
+        btn_layout.addWidget(self.import_folders_btn)
         btn_layout.addWidget(self.import_tsv_btn)
         btn_layout.addWidget(self.goto_line_edit)
         btn_layout.addStretch()
@@ -177,12 +180,17 @@ class TextTableDialog(QDialog):
 
         return super().eventFilter(obj, event)
 
+    def _disable_buttons(self) -> None:
+        self.import_images_btn.setEnabled(False)
+        self.import_folders_btn.setEnabled(False)
+        self.import_tsv_btn.setEnabled(False)
+
     def import_images(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", "Images (*.png *.jpg *.jpeg)")
         if files:
             self.table_model.import_images([Path(f) for f in files])
             self.sync_table_view()
-            self.import_images_btn.setEnabled(False)
+            self._disable_buttons()
 
     def import_tsv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(self, "Select TSV File", "", "TSV (*.tsv)")
@@ -190,9 +198,25 @@ class TextTableDialog(QDialog):
             try:
                 self.table_model.import_tsv(Path(file_path))
                 self.sync_table_view()
-                self.import_images_btn.setEnabled(False)
+                self._disable_buttons()
             except Exception as e:
                 print(f"Import TSV failed: {e}")
+
+    def import_folders(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder", "")
+        if not folder:
+            return
+        p = Path(folder)
+        patterns = ("*.png", "*.jpg", "*.jpeg")
+        images: list[Path] = []
+        for pat in patterns:
+            images.extend(list(p.rglob(pat)))
+        # keep deterministic order
+        images = sorted(images)
+        if images:
+            self.table_model.import_images(images)
+            self.sync_table_view()
+            self._disable_buttons()
 
     def goto_line(self) -> None:
         text = self.goto_line_edit.text().strip()
