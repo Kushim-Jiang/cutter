@@ -342,6 +342,71 @@ aside.side {
   padding: 10px;
 }
 
+/* 右侧栏：上「当前框」、中「本页全部字」、下「参数 / 工具 / 说明」 */
+.side-head {
+  flex: 0 0 auto;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.side-head .head-top {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.side-head .head-left {
+  flex: 0 0 auto;
+}
+
+.side-head .head-right {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.side-head .head-buttons {
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.side-head h3 {
+  margin: 0 0 6px;
+}
+
+.pv-host {
+  position: relative;
+  width: 100%;
+  max-width: 152px;
+}
+
+.side-more {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.side-more > summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #666;
+  background: #fafbfc;
+  user-select: none;
+}
+
+.side-more[open] {
+  max-height: 55%;
+}
+
+.side-more > .side-body {
+  border-top: 1px solid var(--line);
+}
+
 aside h3 {
   margin: 0 0 8px;
   font-size: 13px;
@@ -351,12 +416,10 @@ aside h3 {
 
 .preview {
   display: block;
-  width: 300px;
-  height: 300px;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 6px;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .hint {

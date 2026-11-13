@@ -38,8 +38,18 @@
   let maskH = 0
   let maskScale = 1
 
+  // 连通块（8 连通）：吸附时框只贴到「同一个字的笔画并集」的外接框上，
+  // 不会停在一根悬空的细线或一点纸纹上。
+  let labels = null
+  let comps = null
+  let compsN = 0
+
   const GROW_SLACK = 0.15
   const SNAP_PAD = 2
+  const OWN_FIT = 0.5      // 连通块外接框有一半以上在框内 → 归这个框
+  const OWN_MIN = 0.15     // 一个都不满足时，退而取重叠最多的那块（至少 15%）
+  const COMP_MIN_AREA = 6  // 比这还小的当纸纹
+  const COMP_SPAN = 2.2    // 比框大这么多倍的（版框线、整行注文）不抢
   const CURSORS = {
     move: 'move',
     n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
@@ -146,6 +156,7 @@
     sw = imgEl.naturalWidth || pageWidth
     sh = imgEl.naturalHeight || pageHeight
     buildMask()
+    buildLabels()
     panX = 0
     panY = 0
     layout()
@@ -171,6 +182,147 @@
     for (let i = 0, j = 0; i < data.length; i += 4, j++) {
       inkMask[j] = data[i] < 160 ? 1 : 0
     }
+  }
+
+  /** 8 连通标记：一次扫一遍，之后吸附只看连通块的外接框。 */
+  function buildLabels() {
+    labels = null
+    comps = null
+    compsN = 0
+    if (!inkMask || !maskW || !maskH) return
+    const W = maskW
+    const H = maskH
+    const lab = new Int32Array(W * H).fill(-1)
+    const cx0 = []
+    const cy0 = []
+    const cx1 = []
+    const cy1 = []
+    const area = []
+    let stack = new Int32Array(1 << 13)
+    let sp = 0
+    const push = (v) => {
+      if (sp === stack.length) {
+        const grown = new Int32Array(stack.length * 2)
+        grown.set(stack)
+        stack = grown
+      }
+      stack[sp++] = v
+    }
+    const total = lab.length
+    let n = 0
+    for (let i = 0; i < total; i++) {
+      if (!inkMask[i] || lab[i] >= 0) continue
+      const id = n++
+      cx0.push(W)
+      cy0.push(H)
+      cx1.push(-1)
+      cy1.push(-1)
+      area.push(0)
+      sp = 0
+      push(i)
+      lab[i] = id
+      while (sp) {
+        const p = stack[--sp]
+        const px = p % W
+        const py = (p - px) / W
+        if (px < cx0[id]) cx0[id] = px
+        if (py < cy0[id]) cy0[id] = py
+        if (px > cx1[id]) cx1[id] = px
+        if (py > cy1[id]) cy1[id] = py
+        area[id]++
+        for (let dy = -1; dy <= 1; dy++) {
+          const ny = py + dy
+          if (ny < 0 || ny >= H) continue
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = px + dx
+            if (nx < 0 || nx >= W || (dx === 0 && dy === 0)) continue
+            const q = ny * W + nx
+            if (inkMask[q] && lab[q] < 0) {
+              lab[q] = id
+              push(q)
+            }
+          }
+        }
+      }
+    }
+    labels = lab
+    comps = { x0: cx0, y0: cy0, x1: cx1, y1: cy1, area }
+    compsN = n
+  }
+
+  /** 归属于这个框的连通块：外接框一半以上落在框内（一个都没有时取重叠最多的那块）。 */
+  function ownedComps(b) {
+    const out = []
+    if (!comps || !compsN) return out
+    const L = Math.max(0, Math.round(b.x / maskScale))
+    const T = Math.max(0, Math.round(b.y / maskScale))
+    const R = Math.min(maskW - 1, Math.round((b.x + b.w) / maskScale))
+    const B = Math.min(maskH - 1, Math.round((b.y + b.h) / maskScale))
+    if (R <= L || B <= T) return out
+    const bw = R - L + 1
+    const bh = B - T + 1
+    let best = -1
+    let bestOv = 0
+    let bestFit = 0
+    for (let i = 0; i < compsN; i++) {
+      const x0 = comps.x0[i]
+      if (x0 > R || comps.x1[i] < L) continue
+      const y0 = comps.y0[i]
+      if (y0 > B || comps.y1[i] < T) continue
+      if (comps.area[i] < COMP_MIN_AREA) continue
+      const w = comps.x1[i] - x0 + 1
+      const h = comps.y1[i] - y0 + 1
+      // 版框线、整行注文这种「比框大得多」的块不参与，否则框会一下弹到整页
+      if (w > Math.max(24, bw * COMP_SPAN) || h > Math.max(24, bh * COMP_SPAN)) continue
+      const iw = Math.min(comps.x1[i], R) - Math.max(x0, L) + 1
+      const ih = Math.min(comps.y1[i], B) - Math.max(y0, T) + 1
+      const ov = iw * ih
+      const fit = ov / (w * h)
+      if (fit >= OWN_FIT) out.push(i)
+      if (ov > bestOv) {
+        bestOv = ov
+        best = i
+        bestFit = fit
+      }
+    }
+    if (!out.length && best >= 0 && bestFit >= OWN_MIN) out.push(best)
+    return out
+  }
+
+  /** 连通吸附：把被拖的那几条边贴到「框内连通块并集」的外接框上。 */
+  function snapConnected(b, edges, ref) {
+    if (!snapOn || !labels) return false
+    const own = ownedComps(ref || b)
+    if (!own.length) return false
+    let x0 = Infinity
+    let y0 = Infinity
+    let x1 = -Infinity
+    let y1 = -Infinity
+    for (const i of own) {
+      if (comps.x0[i] < x0) x0 = comps.x0[i]
+      if (comps.y0[i] < y0) y0 = comps.y0[i]
+      if (comps.x1[i] > x1) x1 = comps.x1[i]
+      if (comps.y1[i] > y1) y1 = comps.y1[i]
+    }
+    const nx0 = x0 * maskScale
+    const ny0 = y0 * maskScale
+    const nx1 = (x1 + 1) * maskScale
+    const ny1 = (y1 + 1) * maskScale
+    const w = edges.includes('l') ? nx1 - nx0 : b.w
+    const h = edges.includes('t') ? ny1 - ny0 : b.h
+    if (w < 4 * maskScale || h < 4 * maskScale) return false
+    if (edges.includes('l')) {
+      b.w += b.x - nx0
+      b.x = nx0
+    }
+    if (edges.includes('r')) b.w = nx1 - b.x
+    if (edges.includes('t')) {
+      b.h += b.y - ny0
+      b.y = ny0
+    }
+    if (edges.includes('b')) b.h = ny1 - b.y
+    if (b.w <= 0 || b.h <= 0) return false
+    return true
   }
 
   function colCount(x, y0, y1) {
@@ -289,6 +441,29 @@
     if (!inkMask) return
     fitToInk(b)
     padBox(b, (snapOn ? SNAP_PAD : 0) - (gap || 0))
+  }
+
+  /** 连通吸附一个框：只留框内那几个连通块（一个字的笔画并集），返回是否改动。 */
+  export function refitConnected(b) {
+    if (!labels) return false
+    const own = ownedComps(b)
+    if (!own.length) return false
+    let x0 = Infinity
+    let y0 = Infinity
+    let x1 = -Infinity
+    let y1 = -Infinity
+    for (const i of own) {
+      if (comps.x0[i] < x0) x0 = comps.x0[i]
+      if (comps.y0[i] < y0) y0 = comps.y0[i]
+      if (comps.x1[i] > x1) x1 = comps.x1[i]
+      if (comps.y1[i] > y1) y1 = comps.y1[i]
+    }
+    b.x = x0 * maskScale
+    b.y = y0 * maskScale
+    b.w = (x1 - x0 + 1) * maskScale
+    b.h = (y1 - y0 + 1) * maskScale
+    padBox(b, (snapOn ? SNAP_PAD : 0) - (gap || 0))
+    return true
   }
 
   function padBox(b, n) {
@@ -461,7 +636,9 @@
       drag.x1 = p.x
       drag.y1 = p.y
       const nb = normRect(drag)
-      if (snapOn && !noSnap) snapEdges(nb, ['l', 'r', 't', 'b'])
+      if (snapOn && !noSnap && !snapConnected(nb, ['l', 'r', 't', 'b'])) {
+        snapEdges(nb, ['l', 'r', 't', 'b'])
+      }
       drag.snap = nb
     } else if (drag.mode === 'move') {
       const b = boxes[drag.i]
@@ -490,7 +667,7 @@
         if (m.includes('e')) e.push('r')
         if (m.includes('n')) e.push('t')
         if (m.includes('s')) e.push('b')
-        snapEdges(b, e)
+        if (!snapConnected(b, e, drag.orig)) snapEdges(b, e)
       }
       markEdited(drag.i)
     }

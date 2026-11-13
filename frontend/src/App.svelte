@@ -57,7 +57,7 @@
   const pageSizes = new Map() // pageId -> { width, height }
   const conflicts = new Set() // 409 过的页：暂停自动写，等用户决定
 
-  let asideTab = $state('preview') // preview | glyphs
+  let moreOpen = $state(false)
   let alignOpen = $state(false)
   let sheetOpen = $state(false)
   let checkOpen = $state(false)
@@ -530,6 +530,21 @@
     message = '本页全部重贴完成'
   }
 
+  /** 本页全部框按「连通块」吸附：一个框只框住一个连通字（同一字的几笔算一块）。 */
+  function snapConnectedAll() {
+    if (!boxes.length || !stage) return
+    pushUndo()
+    let n = 0
+    boxes = boxes.map((b) => {
+      const copy = { ...b }
+      if (!stage.refitConnected(copy)) return b
+      n++
+      return { ...copy, edited: true, source: 'manual' }
+    })
+    markDirty()
+    message = `连通吸附：${n}/${boxes.length} 个框已重贴` + (n < boxes.length ? '（其余框里没有连通块）' : '')
+  }
+
   function deleteBox() {
     if (sel < 0) return
     pushUndo()
@@ -773,10 +788,10 @@
       else goRelative(1)
     } else if (event.key === 'F2') {
       event.preventDefault()
-      asideTab = 'preview'
+      moreOpen = !moreOpen
     } else if (event.key === 'F3') {
       event.preventDefault()
-      asideTab = 'glyphs'
+      moreOpen = false
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
       nudge(0, -step)
@@ -801,6 +816,9 @@
     } else if (event.key.toLowerCase() === 'd') {
       event.preventDefault()
       dark = !dark
+    } else if (event.key.toLowerCase() === 'a') {
+      event.preventDefault()
+      snapConnectedAll()
     }
   }
 
@@ -1028,58 +1046,67 @@
     </div>
 
     <aside class="side">
-      <div class="side-tabs">
-        <button class:on={asideTab === 'preview'} onclick={() => (asideTab = 'preview')} title="预览 + 参数（F2）">
-          预览 / 参数
-        </button>
-        <button class:on={asideTab === 'glyphs'} onclick={() => (asideTab = 'glyphs')} title="本页全部字（F3）">
-          全部字{boxes.length ? ` ${boxes.length}` : ''}
-        </button>
+      <div class="side-head">
+        <div class="head-top">
+          <div class="head-left">
+            <h3>当前框</h3>
+            <PreviewPane
+              {imageUrl}
+              pageWidth={meta?.width || 0}
+              pageHeight={meta?.height || 0}
+              {box}
+              {side}
+            />
+          </div>
+          <div class="head-right">
+            <code class="boxtxt">
+              {#if box}
+                x={Math.round(box.x)} y={Math.round(box.y)} w={Math.round(box.w)} h={Math.round(box.h)}
+              {:else}
+                未选中
+              {/if}
+            </code>
+            <label class="gap">
+              连通间隙
+              <input type="number" min="0" max="6" step="1" bind:value={gap} />
+              <span class="muted">(1 格 ≈ {meta ? Math.round(meta.width / 2200 * 10) / 10 : '1.5'} 页 px)</span>
+            </label>
+          </div>
+        </div>
+        <div class="row head-buttons">
+          <button onclick={refitSelected} disabled={sel < 0}>贴合墨迹</button>
+          <button
+            onclick={snapConnectedAll}
+            disabled={!boxes.length}
+            title="按墨迹连通块把本页每个框贴成「一个连通字」（快捷键 A）"
+          >
+            连通吸附
+          </button>
+          <button class="danger" onclick={deleteBox} disabled={sel < 0}>删除框</button>
+          <button onclick={addBox}>新建框</button>
+        </div>
       </div>
 
-      {#if asideTab === 'glyphs'}
-        <GlyphPanel
-          {boxes}
-          pageWidth={meta?.width || 0}
-          pageHeight={meta?.height || 0}
-          {sel}
-          {review}
-          {showRev}
-          {bookId}
-          {pageId}
-          columns={BOOK_COLUMNS[bookId] ?? 1}
-          onselect={(i) => (sel = i)}
-          onedit={(i) => {
-            sel = i
-            stage?.focusBox(i)
-          }}
-        />
-      {:else}
+      <GlyphPanel
+        {boxes}
+        pageWidth={meta?.width || 0}
+        pageHeight={meta?.height || 0}
+        {sel}
+        {review}
+        {showRev}
+        {bookId}
+        {pageId}
+        columns={BOOK_COLUMNS[bookId] ?? 1}
+        onselect={(i) => (sel = i)}
+        onedit={(i) => {
+          sel = i
+          stage?.focusBox(i)
+        }}
+      />
+
+      <details class="side-more" bind:open={moreOpen}>
+        <summary>参数 / 工具 / 说明（F2）</summary>
       <div class="side-body">
-      <h3>当前框 / 切出来的样子</h3>
-      <PreviewPane {imageUrl} pageWidth={meta?.width || 0} pageHeight={meta?.height || 0} {box} {side} />
-      <div class="row">
-        <code class="boxtxt">
-          {#if box}
-            x={Math.round(box.x)} y={Math.round(box.y)} w={Math.round(box.w)} h={Math.round(box.h)}
-          {:else}
-            未选中
-          {/if}
-        </code>
-      </div>
-      <div class="row">
-        <button onclick={refitSelected} disabled={sel < 0}>贴合墨迹</button>
-        <button onclick={refitAll} disabled={!boxes.length} title="快捷键：单按一下 Shift">本页全部重贴</button>
-        <button class="danger" onclick={deleteBox} disabled={sel < 0}>删除框</button>
-        <button onclick={addBox}>新建框</button>
-      </div>
-      <div class="row">
-        <label class="gap">
-          连通间隙
-          <input type="number" min="0" max="6" step="1" bind:value={gap} />
-          <span class="muted">(1 格 ≈ {meta ? Math.round(meta.width / 2200 * 10) / 10 : '1.5'} 页 px)</span>
-        </label>
-      </div>
 
       {#if book?.params?.length}
         <h3 style="margin-top:14px">检测参数</h3>        {#each book.params as p (p.key)}
@@ -1121,7 +1148,8 @@
         手工对齐
       </button>
       <div class="hint">
-        全部字（「视图」里切换，F3）：整页编号示意 + 每个字的切图，翻页不打断；
+        全部字（右侧栏下半部分，常驻）：每个字的切图 + 它在原图上的切框，点一格跳回画布并选中该框，
+        翻页不打断；连通吸附：框只贴到框内连通块（一个字的笔画并集）的外接框上，拖动时也按这个吸附；
         合法性检查：出界/重复/尺寸离群/空白框，
         汉字海另做编号（条目号缺号、重复、倒序）与部首/笔画/码位检查；编辑历史：本工具每次存盘的快照
         可恢复，汉字海还能看上游 `edits.ndjson` 的人工改动。
@@ -1130,7 +1158,8 @@
       <h3>操作</h3>
       <div class="hint">
         框有 <b>8 个手柄</b>（四角 + 四边中点）：拖角＝两边一起动，拖边＝只动一边<br />
-        拖动时<b>强吸附</b>：每条边只会停在墨迹上，按住 <span class="kbd">Alt</span> 临时关掉<br />
+        拖动时<b>连通吸附</b>：每条边只会停在框内连通块（同一字的笔画并集）的外接框上，
+        按住 <span class="kbd">Alt</span> 临时关掉<br />
         <b>滚轮</b>＝上下滚动 · <b>Alt+滚轮</b>＝以光标为中心缩放 · <b>中键/Space</b> 拖动＝平移<br />
         <span class="kbd">Ctrl</span>+<span class="kbd">Z</span> 撤销 ·
         <span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">Z</span> 重做<br />
@@ -1139,7 +1168,8 @@
         <span class="kbd">←</span><span class="kbd">→</span><span class="kbd">↑</span><span class="kbd">↓</span>
         微调 1px（<span class="kbd">Shift</span> 为 10px）<br />
         <span class="kbd">Delete</span> 删除 · <span class="kbd">Tab</span> 下一个框 ·
-        <span class="kbd">F</span> 贴合墨迹 · 单按 <span class="kbd">Shift</span> 本页全部重贴<br />
+        <span class="kbd">F</span> 贴合墨迹 · 单按 <span class="kbd">Shift</span> 本页全部重贴 ·
+        <span class="kbd">A</span> 本页连通吸附<br />
         空白处按住拖动 = 拉一个新框（松手自动吸附）
       </div>
 
@@ -1156,7 +1186,7 @@
       {#if message}<div class="hint ok">{message}</div>{/if}
       {#if error}<div class="hint err">{error}</div>{/if}
       </div>
-      {/if}
+      </details>
     </aside>
   </main>
 </div>
