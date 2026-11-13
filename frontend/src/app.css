@@ -293,16 +293,52 @@ main {
   background: #fff;
 }
 
-/* 右：固定宽度面板 */
-aside {
-  width: 330px;
-  flex: 0 0 330px;
+/* 右：约占 30% 宽的面板（预览 / 全部字 两个 tab） */
+aside.side {
+  width: clamp(300px, 30vw, 520px);
+  flex: 0 0 auto;
   align-self: stretch;
-  overflow-y: auto;
-  overflow-x: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 8px;
+  overflow: hidden;
+}
+
+.side-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.side-tabs button {
+  flex: 1 1 0;
+  border: 0;
+  border-radius: 0;
+  padding: 7px 6px;
+  background: #fff;
+  font-size: 13px;
+  color: #555;
+}
+
+.side-tabs button + button {
+  border-left: 1px solid var(--line);
+}
+
+.side-tabs button.on {
+  background: #e6f0fb;
+  color: #0b6bcb;
+  font-weight: 600;
+}
+
+.side-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 10px;
 }
 
@@ -1052,4 +1088,116 @@ body.dark .sheet-row input[type='text']:focus {
 
 body.dark .sheet-row.head {
   background: #1b2129;
+}
+
+/* ---------- 本页全部字（内嵌视图，不是弹窗） ---------- */
+.glyphs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  overflow: hidden;
+}
+
+.glyphs-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.glyphs-bar .size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #555;
+}
+
+.glyphs-bar .size input {
+  width: 110px;
+}
+
+.glyphs-bar .size .zlabel {
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.glyphs-bar button.mini {
+  padding: 2px 8px;
+  font-size: 12px;
+  width: auto;
+}
+
+.glyphs-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  display: grid;
+  align-content: start;
+  justify-content: start;
+  padding: 0 8px 8px;
+}
+
+/* 格子尺寸由 GlyphPanel 按「一屏装下整页」算出来，这里只管外观 */
+.glyphs-grid .cell {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  line-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.glyphs-grid .cell {
+  display: grid;
+  place-items: center;
+}
+
+.glyphs-grid .cell .shot {
+  position: relative;
+  display: block;
+  line-height: 0;
+}
+
+.glyphs-grid .cell .shot img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* 真正的切框边线：画在「带上下文」的图上，才看得出这一刀偏没偏 */
+.glyphs-grid .cell .frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid #e03131;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+}
+
+.glyphs-grid .cell .no {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 10px;
+  line-height: 1.3;
+  padding: 0 3px;
+  border-radius: 0 4px 4px 0;
+  background: rgba(255, 255, 255, 0.85);
+  color: #0b6bcb;
+  font-variant-numeric: tabular-nums;
+}
+
+body.dark .glyphs {
+  background: #171c23;
+  border-color: var(--line);
 }

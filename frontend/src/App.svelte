@@ -3,9 +3,9 @@
   import { api } from './lib/api.js'
   import CheckModal from './components/CheckModal.svelte'
   import AlignTable from './components/AlignTable.svelte'
+  import GlyphPanel from './components/GlyphPanel.svelte'
   import SheetView from './components/SheetView.svelte'
   import HistoryModal from './components/HistoryModal.svelte'
-  import OverviewModal from './components/OverviewModal.svelte'
   import PreviewPane from './components/PreviewPane.svelte'
   import SettingsDialog from './components/SettingsDialog.svelte'
   import Stage from './components/Stage.svelte'
@@ -57,7 +57,7 @@
   const pageSizes = new Map() // pageId -> { width, height }
   const conflicts = new Set() // 409 过的页：暂停自动写，等用户决定
 
-  let overviewOpen = $state(false)
+  let asideTab = $state('preview') // preview | glyphs
   let alignOpen = $state(false)
   let sheetOpen = $state(false)
   let checkOpen = $state(false)
@@ -76,6 +76,10 @@
   let undoStack = $state([])
   let redoStack = $state([])
   let pendingUndo = null // 一次拖动开始前的快照；真的改了才入栈
+
+  // 每本书的栏数（版面是固定的，靠阈值猜会误判：康熙某页只有 4 框，
+  // 栏间空隙只有 1.27 倍字宽，当成 3 栏就错了）
+  const BOOK_COLUMNS = { zihai: 3, hzh: 3, kx: 2, hd: 2 }
 
   const book = $derived(books.find((b) => b.id === bookId) || null)
   const volumes = $derived(book?.status?.volumes || [])
@@ -672,12 +676,7 @@
     }
   }
 
-  // ── 本页工具：全部字 / 合法性检查 / 编辑历史 ─────────────
-  function openOverview() {
-    if (!meta) return
-    overviewOpen = true
-  }
-
+  // ── 本页工具：合法性检查 / 编辑历史 ─────────────────────
   async function runCheck() {
     if (!pageId) return
     checkOpen = true
@@ -772,6 +771,12 @@
       event.preventDefault()
       if (sel >= 0) nudge(step, 0)
       else goRelative(1)
+    } else if (event.key === 'F2') {
+      event.preventDefault()
+      asideTab = 'preview'
+    } else if (event.key === 'F3') {
+      event.preventDefault()
+      asideTab = 'glyphs'
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
       nudge(0, -step)
@@ -1022,7 +1027,35 @@
       {#if busy}<div class="overlay-hint small">处理中…</div>{/if}
     </div>
 
-    <aside>
+    <aside class="side">
+      <div class="side-tabs">
+        <button class:on={asideTab === 'preview'} onclick={() => (asideTab = 'preview')} title="预览 + 参数（F2）">
+          预览 / 参数
+        </button>
+        <button class:on={asideTab === 'glyphs'} onclick={() => (asideTab = 'glyphs')} title="本页全部字（F3）">
+          全部字{boxes.length ? ` ${boxes.length}` : ''}
+        </button>
+      </div>
+
+      {#if asideTab === 'glyphs'}
+        <GlyphPanel
+          {boxes}
+          pageWidth={meta?.width || 0}
+          pageHeight={meta?.height || 0}
+          {sel}
+          {review}
+          {showRev}
+          {bookId}
+          {pageId}
+          columns={BOOK_COLUMNS[bookId] ?? 1}
+          onselect={(i) => (sel = i)}
+          onedit={(i) => {
+            sel = i
+            stage?.focusBox(i)
+          }}
+        />
+      {:else}
+      <div class="side-body">
       <h3>当前框 / 切出来的样子</h3>
       <PreviewPane {imageUrl} pageWidth={meta?.width || 0} pageHeight={meta?.height || 0} {box} {side} />
       <div class="row">
@@ -1076,7 +1109,6 @@
 
       <h3 style="margin-top:14px">本页工具</h3>
       <div class="row">
-        <button onclick={openOverview} disabled={!boxes.length}>本页全部字</button>
         <button onclick={runCheck} disabled={!pageId}>合法性检查</button>
         <button onclick={openHistory} disabled={!pageId}>编辑历史</button>
       </div>
@@ -1089,7 +1121,8 @@
         手工对齐
       </button>
       <div class="hint">
-        全部字：整页编号示意 + 每个字的切图；合法性检查：出界/重复/尺寸离群/空白框，
+        全部字（「视图」里切换，F3）：整页编号示意 + 每个字的切图，翻页不打断；
+        合法性检查：出界/重复/尺寸离群/空白框，
         汉字海另做编号（条目号缺号、重复、倒序）与部首/笔画/码位检查；编辑历史：本工具每次存盘的快照
         可恢复，汉字海还能看上游 `edits.ndjson` 的人工改动。
       </div>
@@ -1122,32 +1155,14 @@
       </div>
       {#if message}<div class="hint ok">{message}</div>{/if}
       {#if error}<div class="hint err">{error}</div>{/if}
+      </div>
+      {/if}
     </aside>
   </main>
 </div>
 
 {#if settingsOpen}
   <SettingsDialog {settings} {books} onclose={() => (settingsOpen = false)} onsave={saveSettings} />
-{/if}
-
-{#if overviewOpen && meta}
-  <OverviewModal
-    {imageUrl}
-    pageWidth={meta.width}
-    pageHeight={meta.height}
-    {boxes}
-    {sel}
-    {review}
-    {showRev}
-    {bookId}
-    {pageId}
-    label={meta.label}
-    onselect={(i) => {
-      sel = i
-      stage?.focusBox(i)
-    }}
-    onclose={() => (overviewOpen = false)}
-  />
 {/if}
 
 {#if checkOpen}
