@@ -1,2 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+*.png binary
+*.jpg binary
+*.pdf binary
+*.ndjson text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.svelte text eol=lf
+*.css text eol=lf

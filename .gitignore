@@ -1,2 +1,28 @@
+# Python / uv
+.venv/
 __pycache__/
-temp/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# 运行时产物（字框 sidecar、预览缓存、导出）
+backend/var/
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# 编辑器 / 系统
+.vscode/*
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# 本地覆盖配置（含本机盘符路径，绝不提交）
+config.local.yaml
+*.local.yaml
+.env
+.env.local
