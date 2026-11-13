@@ -1,5 +1,6 @@
 <script>
   import { api } from '../lib/api.js'
+  import { autoRetry } from '../lib/retry.js'
 
   let {
     books = [],
@@ -273,7 +274,8 @@
             <span class="no">{i + 1}</span>
             <span class="img">
               {#if imgUrl(row)}
-                <img src={imgUrl(row)} alt={`图 ${row.img}`} />
+                {@const rowImg = imgUrl(row)}
+                <img src={rowImg} use:autoRetry={rowImg} alt={`图 ${row.img}`} />
               {:else}
                 <button class="bind" onclick={() => bindImage(i)} title="绑定下一个还没用的图">配图</button>
               {/if}

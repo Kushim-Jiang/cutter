@@ -1,5 +1,6 @@
 <script>
   import { api } from '../lib/api.js'
+  import { autoRetry } from '../lib/retry.js'
 
   let {
     bookId = 'zihai',
@@ -111,7 +112,8 @@
               <span class="pos">{row.pos}</span>
               <span class="zh" title={row.standard_form ? `正字：${row.standard_form}` : ''}>
                 {#if row.sprite && !row.char}
-                  <img class="sprite" src={api.alignSpriteUrl(bookId, printed, row.pos)} alt={`书影 ${row.pos}`} />
+                  {@const spriteSrc = api.alignSpriteUrl(bookId, printed, row.pos)}
+                  <img class="sprite" src={spriteSrc} use:autoRetry={spriteSrc} alt={`书影 ${row.pos}`} />
                 {:else}
                   <b>{row.char || '—'}</b>
                 {/if}
@@ -123,8 +125,9 @@
               {#each [['v1', row.v1], ['v2', row.v2]] as [side, box] (side)}
                 <span class="cut">
                   {#if box}
+                    {@const cutSrc = crop(box)}
                     <button class="thumb" onclick={() => jump(box)} title="跳到编辑器里的这个框">
-                      <img src={crop(box)} alt={`${side} ${row.pos}`} />
+                      <img src={cutSrc} use:autoRetry={cutSrc} alt={`${side} ${row.pos}`} />
                     </button>
                   {:else}
                     <span class="dash">—</span>

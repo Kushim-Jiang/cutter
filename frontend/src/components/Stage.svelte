@@ -1,5 +1,6 @@
 <script>
   import { untrack } from 'svelte'
+  import { autoRetry } from '../lib/retry.js'
 
   let {
     imageUrl = '',
@@ -598,7 +599,14 @@
 >
   <div class="wrap" bind:this={wrapEl}>
     {#if imageUrl}
-      <img bind:this={imgEl} src={imageUrl} alt="扫描页" draggable="false" onload={onImageLoad} />
+      <img
+        bind:this={imgEl}
+        src={imageUrl}
+        use:autoRetry={imageUrl}
+        alt="扫描页"
+        draggable="false"
+        onload={onImageLoad}
+      />
     {/if}
     <canvas bind:this={ovEl}></canvas>
   </div>
