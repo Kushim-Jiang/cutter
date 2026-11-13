@@ -15,7 +15,10 @@
     python tools/kx_locate.py --val 70
 
 产出（给 `build_kx_sprites.py` 用）：
-    python tools/kx_locate.py --all          # 写 _up/kangxi/cache/kx-detected.json
+    python tools/kx_locate.py --all          # 第一轮：整叶派位，按册写 _up/kangxi/cache/kx-det-[册].json
+    python tools/kx_locate.py --fill         # 第二轮：还没定位到的位置再单独找一遍（按模板认领）
+    python tools/kx_locate.py --merge        # 把上面两轮的结果合成 cache/kx-detected.json
+    python tools/kx_locate.py --fillval 80   # 第二轮自检：遮住 15% 已知位置，看找回多少、错多少
 """
 import argparse
 import collections
@@ -251,8 +254,15 @@ FILL_MIN_SHAPE = 0.40     # 形状分下限（与 MIN_SHAPE 一致）
 FILL_TAKEN_IOU = 0.12     # 与已解释矩形重叠到此值 → 这个框是别的字
 FILL_CLASH_IOU = 0.35     # 两个补切位置抢同一个框时，后来的让开
 
+# 第一轮补切：模板相关分与形状分取大者（召回优先，构建时再用 MIN_DET_SHAPE 兜底）
+FILL = dict(name="fill", scales=FILL_SCALES, topk=6, min_tm=FILL_MIN_TM,
+            min_shape=FILL_MIN_SHAPE, tm_weight=0.85, tm_only=0.55, strict=False)
+# 第二轮补切（--fill2）：前两轮都没找到的才跑，搜索更宽但只认形状分（准确优先）
+FILL2 = dict(name="fill2", scales=tuple(np.arange(0.34, 1.13, 0.035)), topk=10,
+             min_tm=0.30, min_shape=0.45, tm_weight=0.85, tm_only=0.62, strict=True)
 
-def multi_hits(arr, blocked, gray, scales=FILL_SCALES, topk=6, min_score=FILL_MIN_TM):
+
+def multi_hits(arr, blocked, gray, scales=None, topk=6, min_score=None):
     """整叶多尺度模板搜索，返回按分数降序的 [(score, box)]（互相 IoU>0.3 的只留最高分）。
 
     与 `template_hit` 的区别：不只要一个全局最优。正文里并列的「古文」小字彼此都像，
@@ -260,6 +270,8 @@ def multi_hits(arr, blocked, gray, scales=FILL_SCALES, topk=6, min_score=FILL_MI
     """
     if gray is None:
         return []
+    scales = FILL_SCALES if scales is None else scales
+    min_score = FILL_MIN_TM if min_score is None else min_score
     page = arr if blocked is None else np.where(blocked, 255, arr).astype(np.uint8)
     found = []
     for s in scales:
@@ -442,32 +454,45 @@ def locate_leaf(jobs, rects, arr, tmpl, drop=frozenset(), hits=None):
     return out
 
 
-def fill_leaf(jobs, rects, arr, tmpl, targets, hits=None):
+def fill_leaf(jobs, rects, arr, tmpl, targets, hits=None, cfg=None):
     """补切：给 `targets`（jobs 里的序号）逐个用自己的字形模板整叶找框。
 
     与 `locate_leaf` 不同，这里不按阅读顺序派位，而是「谁的模板最像谁就归谁」：
     正文里并列的「古文」小字常常是同一行连着好几个位置，按顺序派位容易错开一格。
-    `hits` 是跨叶共享的模板搜索结果缓存（一个字只搜一次）。
+    `hits` 是跨叶共享的模板搜索结果缓存（一个字只搜一次，键里带 cfg 名）。
+    `cfg` 里的 `strict`：只看形状分（模板相关分不可靠时用它兜底，宁可空着）。
     """
+    cfg = cfg or FILL
     explained = [r["rect"] for r in rects]
     blocked = blocked_mask(arr.shape, explained)
     cand = {}
     for n in targets:
         ch = jobs[n]["entry"]["char"]
         norm = tmpl.get(ch)
-        if hits is not None and ch in hits:
-            got_hits = hits[ch]
+        key = (ch, cfg["name"])
+        if hits is not None and key in hits:
+            got_hits = hits[key]
         else:
-            got_hits = multi_hits(arr, blocked, tmpl.gray(ch))
+            got_hits = multi_hits(arr, blocked, tmpl.gray(ch), scales=cfg["scales"],
+                                  topk=cfg["topk"], min_score=cfg["min_tm"])
             if hits is not None:
-                hits[ch] = got_hits
+                hits[key] = got_hits
         got = []
         for sc, b in got_hits:
             if any(box_iou(b, r) > FILL_TAKEN_IOU for r in explained):
                 continue
             sh = shape_of(arr, b, norm)
-            val = max(sh, sc * 0.85) if norm is not None else sc * 0.85
-            if val >= FILL_MIN_SHAPE and (norm is not None or sc >= 0.55):
+            if norm is not None:
+                val = sc * cfg["tm_weight"] if cfg["strict"] else max(sh, sc * cfg["tm_weight"])
+                if cfg["strict"]:
+                    if sh < cfg["min_shape"]:
+                        continue
+                    val = sh
+            else:
+                if sc < cfg["tm_only"]:
+                    continue
+                val = sc * cfg["tm_weight"]
+            if val >= cfg["min_shape"]:
                 got.append((val, b))
         got.sort(key=lambda p: -p[0])
         cand[n] = got
@@ -522,10 +547,8 @@ def merge_detected():
     """合并各册的定位结果与第二轮补切结果 → cache/kx-detected.json。"""
     out = {}
     parts = sorted(glob.glob(os.path.join(CACHE, "kx-det-*.json")))
-    parts.append(os.path.join(CACHE, "kx-filled.json"))
+    parts += sorted(glob.glob(os.path.join(CACHE, "kx-filled*.json")))
     for p in parts:
-        if not os.path.exists(p):
-            continue
         d = json.load(open(p, encoding="utf-8"))
         out.update(d)
         print("  %-18s %5d" % (os.path.basename(p), len(d)))
@@ -549,8 +572,9 @@ def fill_targets(det, jobs, vol=None):
     return want
 
 
-def fill_leaves(want, jobs, rects_by_leaf, tmpl):
+def fill_leaves(want, jobs, rects_by_leaf, tmpl, cfg=None):
     """逐叶补切，返回 {key: 记录}。want: {叶: [jobs 序号]}。"""
+    cfg = cfg or FILL
     found = {}
     hits = {}
     pmc, volc = {}, {}
@@ -571,7 +595,8 @@ def fill_leaves(want, jobs, rects_by_leaf, tmpl):
             continue
         targets = want[lf]
         lf_jobs = [jobs[i] for i in targets]
-        got = fill_leaf(lf_jobs, rects_by_leaf[lf], arr, tmpl, list(range(len(targets))), hits)
+        got = fill_leaf(lf_jobs, rects_by_leaf[lf], arr, tmpl, list(range(len(targets))),
+                        hits, cfg)
         for k, b in got.items():
             e = lf_jobs[k]["entry"]
             found[B.e_key(e)] = {
@@ -593,6 +618,10 @@ def main():
     ap.add_argument("--all", action="store_true", help="跑全部，写 cache/kx-detected.json")
     ap.add_argument("--fill", action="store_true",
                     help="第二轮补切：给 kx-detected.json 之外的位置单独找框，写 cache/kx-filled.json")
+    ap.add_argument("--fill2", action="store_true",
+                    help="第三轮补切：给前两轮都没找到的位置再搜一遍（更宽的尺度，只认形状分），"
+                         "写 cache/kx-filled2.json")
+    ap.add_argument("--strict", action="store_true", help="--fillval 用 --fill2 那套参数")
     ap.add_argument("--fillval", type=int, default=0,
                     help="补切自检：随机遮住 N 叶里 15%% 已知位置，看补切能找回多少、错多少")
     ap.add_argument("--merge", action="store_true",
@@ -669,18 +698,22 @@ def main():
     if args.vol:
         leaves = [lf for lf in leaves if lf[0] == args.vol]
 
-    if args.fill:
+    if args.fill or args.fill2:
         det = {}
-        det_path = OUT_JSON if os.path.exists(OUT_JSON) else None
-        if det_path:
-            det = json.load(open(det_path, encoding="utf-8"))
+        if os.path.exists(OUT_JSON):
+            det.update(json.load(open(OUT_JSON, encoding="utf-8")))
         for p in sorted(glob.glob(os.path.join(CACHE, "kx-det-*.json"))):
             det.update(json.load(open(p, encoding="utf-8")))
+        for p in sorted(glob.glob(os.path.join(CACHE, "kx-filled*.json"))):
+            det.update(json.load(open(p, encoding="utf-8")))
         want = fill_targets(det, jobs, args.vol)
-        print("补切目标 %d 处，涉及 %d 叶" % (sum(len(v) for v in want.values()), len(want)),
-              flush=True)
-        found = fill_leaves(want, jobs, rects_by_leaf, tmpl)
-        out = args.out or os.path.join(CACHE, "kx-filled%s.json" % ("-" + args.vol if args.vol else ""))
+        cfg = FILL2 if args.fill2 else FILL
+        print("%s 目标 %d 处，涉及 %d 叶" % (cfg["name"], sum(len(v) for v in want.values()),
+                                          len(want)), flush=True)
+        found = fill_leaves(want, jobs, rects_by_leaf, tmpl, cfg)
+        prefix = "kx-filled2" if args.fill2 else "kx-filled"
+        out = args.out or os.path.join(CACHE, "%s%s.json"
+                                       % (prefix, "-" + args.vol if args.vol else ""))
         json.dump(found, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
         sh = sorted(v["shape"] for v in found.values())
         print("写出 %s 共 %d 处（形状分中位 %.2f）"
@@ -688,6 +721,7 @@ def main():
         return
 
     if args.fillval:
+        cfg = FILL2 if args.strict else FILL
         rnd = random.Random(20260601)
         pool = [lf for lf in leaves if any(jobs[i]["rec"] is not None for i in leaf_of[lf])]
         rnd.shuffle(pool)
@@ -715,7 +749,7 @@ def main():
                                            jobs[i]["rec"]["x1"], jobs[i]["rec"]["y1"])
                                           for i in drop if jobs[i]["rec"] is not None}]
             lf_jobs = [jobs[i] for i in sorted(drop)]
-            got = fill_leaf(lf_jobs, rects, arr, tmpl, list(range(len(lf_jobs))))
+            got = fill_leaf(lf_jobs, rects, arr, tmpl, list(range(len(lf_jobs))), None, cfg)
             for k, b in got.items():
                 j = lf_jobs[k]
                 rect = (j["rec"]["x0"], j["rec"]["y0"], j["rec"]["x1"], j["rec"]["y1"])

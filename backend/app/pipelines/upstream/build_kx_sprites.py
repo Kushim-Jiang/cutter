@@ -48,6 +48,7 @@ MARGIN = 2
 B36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 STEP = 366.0        # 列内相邻两处字头的行距（实测中位数）
 MIN_OVERLAP = 0.60  # 「扫描按矩形现裁」与上游那张的重合度下限，低于此值改用上游图
+MIN_DET_SHAPE = 0.28  # 自动定位结果的可信下限：抽检 <0.30 的一半抓到了邻字，宁可退回同字图
 
 F_CHAR = "\u5b57"
 F_CAT = "\u7c7b\u522b"
@@ -584,8 +585,11 @@ def build(glyph_dir, out_dir, rows, write, report_path, cut_all=False):
     detected = {}
     det_path = os.path.join(CACHE, "kx-detected.json")
     if os.path.exists(det_path):
-        detected = json.load(open(det_path, encoding="utf-8"))
-        print("自动定位坐标 %d 处（%s）" % (len(detected), os.path.basename(det_path)), flush=True)
+        raw = json.load(open(det_path, encoding="utf-8"))
+        detected = {k: v for k, v in raw.items() if v.get("shape", 0) >= MIN_DET_SHAPE}
+        print("自动定位坐标 %d 处（%s；形状分 <%.2f 的 %d 处不用）"
+              % (len(detected), os.path.basename(det_path), MIN_DET_SHAPE,
+                 len(raw) - len(detected)), flush=True)
 
     page_scan = {}
     for (page, index), rec in sorted(matched.items()):
