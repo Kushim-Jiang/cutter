@@ -1,0 +1,52 @@
+# cutter 本地配置模板
+#
+# 用法：复制成 config.local.yaml（该文件名已在 .gitignore 里，不会提交），
+# 把你的真实路径填进去即可。
+#
+#   Copy-Item config.example.yaml config.local.yaml
+#
+# 路径可以写绝对路径，也可以写相对仓库根的相对路径。
+# 环境变量优先级更高（CUTTER_DATA_DIR / CUTTER_ZIHAI_PDF / …），
+# 界面上「设置」改的值存在 backend/var/settings.json，优先级最高。
+#
+
+# 上游数据仓库（yedict-data，约 28 GB，不复制进本仓库）
+# 留空则用仓库同级目录 ../yedict-data
+data_dir: ../yedict-data
+
+# 运行时产物目录（字框 sidecar、编辑历史、导出、对齐表）
+# 留空则用 backend/var
+work_dir: backend/var
+
+# 界面默认值（可选）
+preview_width: 2200
+gap: 2
+use_seed: true
+
+books:
+  # 中华字海（两卷）
+  zihai:
+    pdf: ""            # 卷 1 = 中华字海1a.pdf
+    volumes:
+      "1":
+        pdf: ""
+      "2":
+        pdf: ""        # 卷 2 = 中华字海2.pdf
+
+  # 汉字海
+  hzh:
+    pdf: ""
+
+  # 康熙字典（内府本）：13 册 300dpi 扫描 PDF 所在目录
+  kx:
+    book_dir: ""
+    group_file: ""
+
+  # 汉语大字典（两版）
+  hd:
+    pdf: ""
+    volumes:
+      "1":
+        pdf: ""        # 第一版
+      "2":
+        pdf: ""        # 第二版（有文字层）

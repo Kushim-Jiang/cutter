@@ -2,12 +2,28 @@
     "cSpell.words": [
         "arctan",
         "deskew",
+        "fastapi",
         "fromarray",
+        "hzh",
         "imread",
         "imwrite",
+        "kangxi",
+        "ndjson",
         "numpy",
         "opencv",
-        "Pixmap",
-        "scipy"
-    ]
+        "pymupdf",
+        "scipy",
+        "svelte",
+        "uvicorn",
+        "yedict",
+        "zihai",
+        "ziid"
+    ],
+    "python.analysis.extraPaths": [
+        "backend"
+    ],
+    "python.testing.pytestArgs": [
+        "backend/tests"
+    ],
+    "python.testing.pytestEnabled": true
 }
