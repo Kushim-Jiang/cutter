@@ -171,7 +171,13 @@
         title={`#${item.i + 1}  x=${Math.round(item.b.x)} y=${Math.round(item.b.y)} w=${Math.round(item.b.w)} h=${Math.round(item.b.h)}`}
       >
         <span class="shot" style={shotStyle(f.outer)}>
-          <img {src} use:autoRetry={src} alt={`第 ${item.i + 1} 个字`} />
+          <img
+            {src}
+            use:autoRetry={src}
+            alt={`第 ${item.i + 1} 个字`}
+            loading="lazy"
+            decoding="async"
+          />
           <span
             class="frame"
             style="left:{f.line.left}%;top:{f.line.top}%;width:{f.line.width}%;height:{f.line.height}%"

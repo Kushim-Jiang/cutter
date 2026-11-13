@@ -102,6 +102,11 @@ async def page_preview(book: str, page: str, max_width: int = Query(0, ge=200, l
     return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
 
 
+# 切图只取决于「源页 + 矩形 + 宽度」，参数一样结果就一样，交给浏览器缓存，
+# 翻页翻回来、开关右侧标签都不用重新拉。
+CROP_CACHE = "private, max-age=86400"
+
+
 @router.get("/{book}/pages/{page}/crop")
 async def page_crop(
     book: str, page: str, x: int, y: int, w: int, h: int, max_width: int = Query(400, ge=32, le=2000)
@@ -113,7 +118,7 @@ async def page_crop(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise _to_http(exc) from exc
-    return Response(content=data, media_type="image/png")
+    return Response(content=data, media_type="image/png", headers={"Cache-Control": CROP_CACHE})
 
 
 @router.get("/{book}/pages/{page}/boxes")
