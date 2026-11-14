@@ -151,3 +151,41 @@ def test_hd_layout_detect_finds_heads_only():
     found = hd_heads.detect(gray, shrink=1)
     assert len(found["cands"]) == 4
     assert found["body_h"] == 26
+
+
+def test_hd_leftmost_column_ignores_stray_block():
+    """一个走偏的窄块（古文字形/注文碎片）不该把整栏字头顶掉。
+
+    上游规则以「最左的那个块」为基准，p321 这类页整左栏的 5 个 字头
+    就是因为最左边多出一个 132px 的小块而全被丢掉。
+    """
+    from app.pipelines.upstream import hd_heads
+
+    heads = [(860, 600 + i * 500, 255, 250) for i in range(5)]
+    stray = (724, 6174, 132, 168)  # 更左、更窄，只有一块
+    kept = hd_heads.leftmost_column([*heads, stray])
+    # 关键是整栏字头一个不少；多留一个窄块比丢 5 个字头划算
+    assert set(heads) <= set(kept)
+    assert len(kept) <= len(heads) + 1
+
+
+def test_hd_leftmost_column_keeps_upstream_behaviour_when_clean():
+    """正常页面上（最左一列本身就成规模）结果与上游一致：只留最左一列。"""
+    from app.pipelines.upstream import hd_heads
+
+    left = [(860, 600, 255, 250), (858, 1400, 250, 250)]
+    indented = [(1200, 900, 240, 240)]  # 向右缩进的块（古文字形示例）
+    kept = hd_heads.leftmost_column(left + indented)
+    assert sorted(kept) == sorted(left)
+
+
+def test_hd_trim_wide_splits_head_from_note():
+    """字头后面紧跟小字注音时，膨胀会把两者粘成一个宽块；超宽块要在空白处切回字头。"""
+    from app.pipelines.upstream import hd_heads
+
+    mask = np.zeros((60, 300), np.uint8)
+    mask[10:50, 5:55] = 1  # 字头
+    mask[10:50, 80:280] = 1  # 右侧连着的注文（中间 25 列空白）
+    trimmed = hd_heads.trim_wide(mask, (0, 0, 300, 60), max_w=80)
+    assert trimmed[2] <= 80
+    assert trimmed[0] == 0 and trimmed[1] == 0

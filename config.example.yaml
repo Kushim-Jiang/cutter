@@ -56,3 +56,5 @@ books:
         pdf: ""
         first_page: 1
         last_page: 5127
+    # 本工具跑出来的预测框（scripts/predict_hd.py 产出）；留空 = <seed_dir>/hd1-pred.ndjson
+    predict_file: ""

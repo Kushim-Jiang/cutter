@@ -91,6 +91,60 @@ def body_height(probe: list[tuple[int, int, int, int]], fallback_shape: tuple[in
     return Counter(heights).most_common(1)[0][0]
 
 
+def trim_wide(mask, box: tuple[int, int, int, int], max_w: int) -> tuple[int, int, int, int]:
+    """把「字头 + 后面的注音/释文被膨胀粘在一起」的宽块，在第一个空白列处切开。
+
+    字头后面常常紧跟小字注音，k×k 膨胀会把两者并成一个宽块，
+    宽到超出 `max_side` 就被整块丢掉——p774 这一页因此丢了 5 个字头。
+    """
+    x, y, w, h = box
+    if w <= max_w:
+        return box
+    sub = mask[y : y + h, x : x + w]
+    col_ink = sub.sum(axis=0)
+    gap = 0
+    for i in range(max(1, int(max_w * 0.55)), w):
+        if col_ink[i] == 0:
+            gap += 1
+            if gap >= 2:
+                cut = i - gap + 1
+                if cut >= max(10, int(max_w * 0.4)):
+                    return (x, y, cut, h)
+                break
+        else:
+            gap = 0
+    return box
+
+
+def leftmost_column(inside: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:
+    """每栏只留最左一列（字头一律起栏，古文字形示例向右排开）。
+
+    上游是「以最左的那个块为基准」，一个走偏的块（古文字形、注文碎片）
+    就能把整栏字头顶掉。所以加了兜底：只有当这一列只剩零星几个块时，
+    才改用「最宽的那批块」定左边界——字头在一页上总是最大的。
+    """
+    widths = sorted(b[2] for b in inside)
+    # 容差按字头宽度的 60%：字头之间本身就有 ±15px 的左边界抖动，
+    # 上游取 25% 时同一栏里靠右的几个会被判成「缩进」而丢掉。
+    tol = max(10, int(widths[len(widths) // 2] * 0.60))
+    xmin = min(b[0] for b in inside)
+    base = [b for b in inside if b[0] - xmin <= tol]
+    if base:
+        # 用「已选中的这一批」的中位左边界再定一次锚点：最左那个块常常是走偏的
+        # （古文字形、注文碎片），拿它当锚点会让同一栏右半边的字头差几像素就出局。
+        anchor = sorted(b[0] for b in base)[len(base) // 2]
+        base = [b for b in inside if abs(b[0] - anchor) <= tol]
+    if len(base) >= 3:
+        return base
+    wide = [b for b in inside if b[2] >= 0.75 * max(widths)]
+    if wide:
+        alt = min(b[0] for b in wide)
+        alt_keep = [b for b in inside if abs(b[0] - alt) <= tol]
+        if len(alt_keep) > len(base):
+            return alt_keep
+    return base
+
+
 def detect(
     img: np.ndarray,
     shrink: int = 2,
@@ -122,13 +176,28 @@ def detect(
     k = max(7, int(round(body_h * 0.16)) | 1)
 
     limit = max_side // shrink
+    comps = components(mask, k)
     big = [
         b
-        for b in components(mask, k)
+        for b in comps
         if min_ratio * body_h <= b[3] <= limit
         and 45 <= b[2] <= limit
         and 0.5 <= b[2] / max(b[3], 1) <= 1.9
     ]
+    # 超宽的块多半是「字头 + 紧跟的小字注音」被膨胀粘在一起：在空白处切回字头。
+    wide = [
+        b
+        for b in comps
+        if min_ratio * body_h <= b[3] <= limit
+        and b[2] > limit
+        and 0.5 <= b[2] / max(b[3], 1) <= 4.0
+    ]
+    if wide:
+        ref_w = int(sorted(b[2] for b in big)[len(big) // 2]) if big else int(limit * 0.75)
+        for b in wide:
+            trimmed = trim_wide(mask, b, ref_w)
+            if trimmed[2] <= limit:
+                big.append(trimmed)
     if footer < 1.0 or edge > 0.0:
         mh, mw = mask.shape
         big = [
@@ -145,13 +214,9 @@ def detect(
         inside = [b for b in big if bx0 <= b[0] + b[2] / 2 <= bx1]
         if not inside:
             continue
-        xmin = min(b[0] for b in inside)
-        widths = sorted(b[2] for b in inside)
-        tol = max(10, int(widths[len(widths) // 2] * 0.25))
-        for b in inside:
-            if b[0] - xmin <= tol:
-                heads.append(b)
-                cols.append(ci)
+        for b in leftmost_column(inside):
+            heads.append(b)
+            cols.append(ci)
 
     order = sorted(range(len(heads)), key=lambda i: (cols[i], heads[i][1], heads[i][0]))
     cands = []

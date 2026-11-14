@@ -253,22 +253,38 @@ class HdPipeline(Pipeline):
         return imaging.gray_to_ink(self._render(page_id))
 
     # ── 预置数据（第一版定稿字头框） ───────────────────────
+    def _seed_dir(self) -> Path:
+        base = self.settings.get("seed_dir")
+        return Path(base) if base else config.DATA_DIR / "_up" / "handa" / "data"
+
     def _seed_file(self) -> Path:
         configured = self.settings.get("seed_file")
         if configured:
             return Path(configured)
-        base = self.settings.get("seed_dir")
-        folder = Path(base) if base else config.DATA_DIR / "_up" / "handa" / "data"
-        return folder / "hd1-heads.ndjson"
+        return self._seed_dir() / "hd1-heads.ndjson"
+
+    def pred_file(self) -> Path:
+        """本工具自己跑出来的预测框（`scripts/predict_hd.py` 产出）。
+
+        上游定稿只覆盖人工校过的部分页；没有定稿的页用这里补，
+        同样是 `{"pdf": 0 基页号, "box": [x,y,w,h], "col": c}`。
+        """
+        configured = self.settings.get("predict_file")
+        if configured:
+            return Path(configured)
+        return self._seed_dir() / "hd1-pred.ndjson"
 
     def _seed_index(self) -> dict[int, list[tuple[int, int, int, int, int]]]:
-        path = self._seed_file()
-        key = str(path)
+        files = (self._seed_file(), self.pred_file())
+        key = "|".join(str(p) for p in files)
         if key in _SEED_CACHE:
             return _SEED_CACHE[key]
 
         grouped: dict[int, list[tuple[int, int, int, int, int]]] = {}
-        if path.is_file():
+        # 上游定稿优先；预测文件只补定稿里没有的页
+        for rank, path in enumerate(files):
+            if not path.is_file():
+                continue
             with path.open(encoding="utf-8") as fh:
                 for line in fh:
                     line = line.strip()
@@ -282,6 +298,8 @@ class HdPipeline(Pipeline):
                     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                         continue
                     if w <= 0 or h <= 0:
+                        continue
+                    if rank and pno in grouped:
                         continue
                     col = int(row.get("col", 0) or 0)
                     grouped.setdefault(pno, []).append((col, x, y, w, h))
