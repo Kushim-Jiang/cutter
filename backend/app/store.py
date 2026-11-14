@@ -253,8 +253,14 @@ def _save_boxes_locked(
     return payload
 
 
-def update_state(book: str, page_id: str, state: dict[str, Any]) -> dict[str, Any]:
-    """只改状态（完成标记等），同样按页加锁并递增 rev。"""
+def update_state(
+    book: str, page_id: str, state: dict[str, Any], base: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """只改状态（完成标记等），同样按页加锁并递增 rev。
+
+    本页还没有本地存盘时（用的是上游定稿），`base` 由调用方带上定稿的框，
+    否则这里会凭空写一个空框的本地记录，把整页定稿盖掉。
+    """
     with _page_lock(book, page_id):
         data = load_boxes(book, page_id)
         if data is None:
@@ -267,6 +273,7 @@ def update_state(book: str, page_id: str, state: dict[str, Any]) -> dict[str, An
                 "extra": {},
                 "state": {},
                 "rev": 0,
+                **(base or {}),
             }
         data["state"] = {**data.get("state", {}), **state}
         data["rev"] = int(data.get("rev", 0) or 0) + 1

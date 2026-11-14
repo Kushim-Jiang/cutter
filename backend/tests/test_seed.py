@@ -125,6 +125,37 @@ def test_seed_absent_returns_none(tmp_path):
         assert pipeline.seed_done(page) is False
 
 
+def test_state_write_keeps_seed_boxes(client, tmp_path, monkeypatch):
+    """标记完成只该改状态：本页只有定稿时，不能写出一条空框记录把定稿顶掉。"""
+    from app import config
+
+    _write(
+        tmp_path / "edits.json",
+        {"1": [{"x": 10, "y": 20, "w": 30, "h": 40}, {"x": 60, "y": 20, "w": 30, "h": 40}]},
+    )
+    monkeypatch.setattr(
+        config,
+        "book_setting",
+        lambda book: {"seed_dir": str(tmp_path), "pdf": "", "use_seed": True} if book == "zihai" else {},
+    )
+    monkeypatch.setattr(config, "load_settings", lambda: {"use_seed": True})
+    # 本地存盘目录也关进 tmp_path，别把共用的测试工作目录弄脏
+    monkeypatch.setattr(config, "BOX_DIR", tmp_path / "boxes")
+
+    before = client.get("/api/books/zihai/pages/1:84/boxes").json()
+    assert before["origin"] == "seed"
+    assert len(before["boxes"]) == 2
+
+    res = client.post("/api/books/zihai/pages/1:84/state", json={"done": True})
+    assert res.status_code == 200
+    assert res.json()["state"]["done"] is True
+
+    after = client.get("/api/books/zihai/pages/1:84/boxes").json()
+    assert len(after["boxes"]) == 2
+    assert [b["x"] for b in after["boxes"]] == [10, 60]
+    assert after["state"]["done"] is True
+
+
 def test_boxes_endpoint_prefers_local_then_seed(client, tmp_path, monkeypatch):
     """GET /boxes：本地存盘 > 预置 > 空，且 origin 能区分。"""
     from app import config

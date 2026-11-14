@@ -235,9 +235,22 @@ async def refine_page(book: str, page: str, request: models.RefineRequest) -> di
 
 @router.post("/{book}/pages/{page}/state")
 async def set_state(book: str, page: str, request: models.StateRequest) -> dict[str, Any]:
-    _pipeline(book)
+    pipeline = _pipeline(book)
     update = {k: v for k, v in request.model_dump().items() if v is not None}
-    data = store.update_state(book, page, update)
+
+    # 本页只有上游定稿、还没有本地记录时，把定稿的框一起带上再写状态，
+    # 否则写出来的空框记录会顶掉整页定稿。
+    base: dict[str, Any] | None = None
+    if store.load_boxes(book, page) is None and config.load_settings().get("use_seed", True):
+        try:
+            seed = await run_in_threadpool(pipeline.seed_boxes, page)
+        except Exception:
+            seed = None
+        if seed:
+            boxes, extra = seed
+            base = {"boxes": [b.as_dict() for b in boxes], "extra": dict(extra)}
+
+    data = store.update_state(book, page, update, base=base)
     return {"page": page, "state": data.get("state", {}), "rev": data.get("rev", 0)}
 
 
