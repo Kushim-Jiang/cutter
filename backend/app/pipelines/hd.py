@@ -146,11 +146,12 @@ class HdPipeline(Pipeline):
                 "min_ratio",
                 "字头/正文高度比",
                 "number",
-                1.45,
+                1.75,
                 min=1.0,
                 max=3.0,
                 step=0.05,
-                help="上游 hd_heads 的阈值：大字块高度至少是本页正文中位字高的这个倍数。",
+                help="大字块高度至少是本页正文中位字高的这个倍数。上游取 1.45，"
+                "但古文字形示例通常也有 1.4–1.5 倍，会把它们当字头；1.75 实测误检减一半。",
             ),
             param("max_side", "字头最大边长", "int", 340, min=80, max=1200, step=10),
             param(
@@ -362,7 +363,7 @@ class HdPipeline(Pipeline):
             gray,
             shrink=2,
             max_side=int(params.get("max_side", 340)),
-            min_ratio=float(params.get("min_ratio", 1.45)),
+            min_ratio=float(params.get("min_ratio", 1.75)),
             footer=float(params.get("footer", 0.9)),
         )
         return [

@@ -92,28 +92,71 @@ def body_height(probe: list[tuple[int, int, int, int]], fallback_shape: tuple[in
 
 
 def trim_wide(mask, box: tuple[int, int, int, int], max_w: int) -> tuple[int, int, int, int]:
-    """把「字头 + 后面的注音/释文被膨胀粘在一起」的宽块，在第一个空白列处切开。
+    """把「字头 + 后面的注音/释文被膨胀粘在一起」的宽块，切回字头。
 
     字头后面常常紧跟小字注音，k×k 膨胀会把两者并成一个宽块，
-    宽到超出 `max_side` 就被整块丢掉——p774 这一页因此丢了 5 个字头。
+    宽到超出 `max_side` 就被整块丢掉（p774 这一页因此丢了 5 个字头）。
+
+    切口要挑「宽度接近字头、而且空白足够宽」的那一处——汉字内部本来就有空列，
+    随便切一刀会把一个字劈成两半（p868 就被切成了 96px 宽的半拉字）。
     """
     x, y, w, h = box
     if w <= max_w:
         return box
     sub = mask[y : y + h, x : x + w]
     col_ink = sub.sum(axis=0)
-    gap = 0
-    for i in range(max(1, int(max_w * 0.55)), w):
+    min_gap = max(3, int(max_w * 0.05))
+    lo = max(1, int(max_w * 0.5))
+    hi = min(w, int(max_w * 1.6))
+    best_cut, best_score = -1, 1e9
+    i = lo
+    while i < hi:
         if col_ink[i] == 0:
-            gap += 1
-            if gap >= 2:
-                cut = i - gap + 1
-                if cut >= max(10, int(max_w * 0.4)):
-                    return (x, y, cut, h)
-                break
+            start = i
+            while i < w and col_ink[i] == 0:
+                i += 1
+            run = i - start
+            if run >= min_gap:
+                width = start
+                score = abs(width - max_w) - run  # 越接近字头宽度、空白越宽越好
+                if width >= max(10, int(max_w * 0.4)) and score < best_score:
+                    best_score, best_cut = score, start
         else:
-            gap = 0
+            i += 1
+    if best_cut > 0:
+        return (x, y, best_cut, h)
     return box
+
+
+def merge_row_parts(
+    boxes: list[tuple[int, int, int, int]], max_w: int
+) -> list[tuple[int, int, int, int]]:
+    """把同一行、紧挨着的两个块并回一个字。
+
+    有的字笔画离得远（如「𠂇」「卝」这类），膨胀核也连不起来，
+    于是同一个字被拆成左右两块，各占一半宽度，谁都不像字头（p868 那个 249px 的字
+    被拆成 116 + 82 两块）。同一行、间隙很小、并起来不超过上限，就并。
+    """
+    out: list[tuple[int, int, int, int]] = []
+    for b in sorted(boxes, key=lambda b: (b[1], b[0])):
+        for i, m in enumerate(out):
+            overlap = min(m[1] + m[3], b[1] + b[3]) - max(m[1], b[1])
+            if overlap < 0.6 * min(m[3], b[3]):
+                continue
+            gap = max(b[0], m[0]) - min(m[0] + m[2], b[0] + b[2])
+            if gap > max(6, int(max_w * 0.15)):
+                continue
+            x0 = min(m[0], b[0])
+            x1 = max(m[0] + m[2], b[0] + b[2])
+            if x1 - x0 > max_w:
+                continue
+            y0 = min(m[1], b[1])
+            y1 = max(m[1] + m[3], b[1] + b[3])
+            out[i] = (x0, y0, x1 - x0, y1 - y0)
+            break
+        else:
+            out.append(b)
+    return out
 
 
 def leftmost_column(inside: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:
@@ -149,7 +192,7 @@ def detect(
     img: np.ndarray,
     shrink: int = 2,
     max_side: int = 340,
-    min_ratio: float = 1.45,
+    min_ratio: float = 1.75,
     body_h: int = 0,
     footer: float = 0.9,
     edge: float = 0.02,
@@ -217,6 +260,17 @@ def detect(
         for b in leftmost_column(inside):
             heads.append(b)
             cols.append(ci)
+
+    if heads:
+        merged = merge_row_parts(heads, limit)
+        if len(merged) != len(heads):
+            # 合并会打乱 heads/cols 的对应关系，按合并后的框重新判栏
+            heads, cols = [], []
+            for b in merged:
+                cx = b[0] + b[2] / 2
+                ci = min(range(len(blocks)), key=lambda i: 0 if blocks[i][0] <= cx <= blocks[i][1] else 1) if blocks else 0
+                heads.append(b)
+                cols.append(ci)
 
     order = sorted(range(len(heads)), key=lambda i: (cols[i], heads[i][1], heads[i][0]))
     cands = []

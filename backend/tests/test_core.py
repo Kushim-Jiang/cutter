@@ -189,3 +189,15 @@ def test_hd_trim_wide_splits_head_from_note():
     trimmed = hd_heads.trim_wide(mask, (0, 0, 300, 60), max_w=80)
     assert trimmed[2] <= 80
     assert trimmed[0] == 0 and trimmed[1] == 0
+
+
+def test_hd_merge_row_parts_joins_split_glyph():
+    """同一个字被拆成左右两块时要并回一个字（p868 的 249px 字被拆成 116+82）。"""
+    from app.pipelines.upstream import hd_heads
+
+    left = (1850, 295, 58, 125)
+    right = (1920, 293, 41, 121)
+    merged = hd_heads.merge_row_parts([left, right], max_w=170)
+    assert len(merged) == 1
+    x, _y, w, _h = merged[0]
+    assert w == 111 and x == 1850
