@@ -83,7 +83,7 @@ async def page_meta(book: str, page: str) -> dict[str, Any]:
         **meta,
         "saved": bool(saved),
         "count": len(saved["boxes"]) if saved else 0,
-        "done": bool(state.get("done")) or seeded,
+        "done": bool(state.get("done")) or (seeded and pipeline.seed_counts_done()),
         "suspect": bool(state.get("suspect")),
         "seeded": seeded,
     }
@@ -264,7 +264,8 @@ async def next_page(book: str, after: str = "", mode: str = "undone") -> dict[st
     order = ids[start:] + ids[:start]
     for page_id in order:
         state = store.page_state(book, page_id)
-        done = state["done"] or pipeline.seed_done(page_id)
+        seeded_done = pipeline.seed_counts_done() and pipeline.seed_done(page_id)
+        done = state["done"] or seeded_done
         if mode == "suspect":
             if state["suspect"]:
                 return {"page": page_id, "found": True}

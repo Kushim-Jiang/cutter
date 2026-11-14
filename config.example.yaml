@@ -45,8 +45,14 @@ books:
   # 汉语大字典（两版）
   hd:
     pdf: ""
+    # 第一版的定稿是自动检测结果，要人工过一遍才算校对完（progress 从 0 开始）
+    seed_counts_done: false
     volumes:
-      "1":
-        pdf: ""        # 第一版
-      "2":
-        pdf: ""        # 第二版（有文字层）
+      "1":             # 第一版（无文字层）
+        pdf: ""
+        first_page: 297 # 正文起止（PDF 页，1 基）；范围外的页直接报错
+        last_page: 5106
+      "2":             # 第二版（有文字层）
+        pdf: ""
+        first_page: 1
+        last_page: 5127

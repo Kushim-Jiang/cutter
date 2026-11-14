@@ -84,6 +84,14 @@ class Pipeline:
         """上游是否把这一页标记为已完成（有定稿即视为完成）。"""
         return False
 
+    def seed_counts_done(self) -> bool:
+        """「有定稿」算不算「已校对完」。
+
+        中华字海/汉字海/康熙的定稿来自已经做完的人工校对，算完成；
+        汉语大字典第一版的定稿是自动检测的初稿，还要人工过一遍，所以不算。
+        """
+        return True
+
     def first_seeded_page(self, page_ids: list[str]) -> str | None:
         """第一个有定稿数据的页（界面打开书籍时直接落在这一页）。"""
         for page_id in page_ids:

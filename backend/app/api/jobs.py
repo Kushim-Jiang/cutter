@@ -75,7 +75,8 @@ async def book_progress(book: str) -> dict[str, Any]:
         state = store.page_state(book, p["id"])
         if state["saved"]:
             saved_pages.append(p["id"])
-        done = state["done"] or (use_seed and pipeline.seed_done(p["id"]))
+        seeded = use_seed and pipeline.seed_counts_done() and pipeline.seed_done(p["id"])
+        done = state["done"] or seeded
         if done:
             done_pages.append(p["id"])
         if state["suspect"]:

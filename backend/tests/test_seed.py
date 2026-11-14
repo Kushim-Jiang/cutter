@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.pipelines.hd import HdPipeline
 from app.pipelines.hzh import HzhPipeline
 from app.pipelines.kx import KxPipeline
 from app.pipelines.zihai import ZihaiPipeline
@@ -184,3 +185,30 @@ def test_boxes_endpoint_prefers_local_then_seed(client, tmp_path, monkeypatch):
     local = client.get("/api/books/zihai/pages/1:84/boxes").json()
     assert local["origin"] == "local"
     assert local["boxes"][0]["x"] == 1
+
+
+def test_hd_page_range_is_enforced(grid_pdf, tmp_path):
+    """只开放配置里的 PDF 页码；范围外直接报错，不当成空白页。"""
+    pipeline = HdPipeline({"volumes": {"1": {"pdf": str(grid_pdf), "first_page": 1, "last_page": 1}}})
+
+    pages = pipeline.pages()
+    assert [p["id"] for p in pages] == ["1:1"]
+
+    for bad in ("1:0", "1:2"):
+        try:
+            pipeline.gray(bad)
+        except ValueError as exc:
+            assert "只开放" in str(exc)
+        else:
+            raise AssertionError(f"{bad} 应该报错")
+
+
+def test_hd_seed_is_not_treated_as_reviewed(tmp_path):
+    """第一版定稿是自动检测初稿：有框、可以当 seed，但不算「已校对完」。"""
+    row = {"pdf": 309, "box": [10, 20, 30, 40], "col": 1}
+    seed_file = _write(tmp_path / "hd1-heads.ndjson", json.dumps(row, ensure_ascii=False) + "\n")
+    pipeline = HdPipeline({"seed_file": str(seed_file), "first_page": 297, "last_page": 5106})
+
+    assert pipeline.seed_done("1:310") is True
+    assert pipeline.seed_counts_done() is False
+    assert HdPipeline({"seed_file": str(seed_file), "seed_counts_done": True}).seed_counts_done() is True

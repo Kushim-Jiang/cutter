@@ -19,7 +19,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 
@@ -48,6 +48,10 @@ class HdPipeline(Pipeline):
         self.settings = settings
 
     # ── 分册 ──────────────────────────────────────────────
+    # 各册的正文页范围（PDF 页，1 基）：第一版正文从 297 页起，第二版从第 1 页起。
+    # 配置里写了就以配置为准；没写就用这里的默认，避免把封面/版权页也当成字头页。
+    PAGE_RANGE: ClassVar[dict[str, tuple[int, int]]] = {"1": (297, 5106), "2": (1, 5127)}
+
     def volumes(self) -> list[dict[str, Any]]:
         configured = self.settings.get("volumes")
         out: list[dict[str, Any]] = []
@@ -55,12 +59,13 @@ class HdPipeline(Pipeline):
             for key in sorted(configured, key=str):
                 cfg = configured[key] or {}
                 label = cfg.get("label") or cfg.get("title") or f"第 {key} 册"
+                first, last = self.PAGE_RANGE.get(str(key), (1, 0))
                 out.append(
                     {
                         "vol": str(key),
                         "pdf": cfg.get("pdf") or self.settings.get("pdf", ""),
-                        "first_page": int(cfg.get("first_page", 1)),
-                        "last_page": int(cfg.get("last_page", 0)),
+                        "first_page": int(cfg.get("first_page", first)),
+                        "last_page": int(cfg.get("last_page", last)),
                         "offset": int(cfg.get("offset", 0)),
                         "title": cfg.get("title") or label,
                         "label": label,
@@ -198,7 +203,15 @@ class HdPipeline(Pipeline):
                 "last_page": 0,
                 "offset": 0,
             }
-        return volume, int(pno)
+        page = int(pno)
+        # 只认配置范围内的 PDF 页：范围外的页在书里不存在（封面/版权/空白页），
+        # 直接报错，别让界面停在渲染不出来的页上。
+        first = max(1, int(volume["first_page"]))
+        last = int(volume["last_page"]) or 0
+        if page < first or (last and page > last):
+            span = f"{first}–{last}" if last else f"{first} 起"
+            raise ValueError(f"{volume['label']} 只开放第 {span} 页（PDF 页），第 {page} 页不可访问")
+        return volume, page
 
     def pages(self) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
@@ -292,6 +305,10 @@ class HdPipeline(Pipeline):
         if volume["vol"] != "1":
             return False
         return bool(self._seed_index().get(pno))
+
+    def seed_counts_done(self) -> bool:
+        # 第一版的定稿是自动检测结果，要人工过一遍才算校对完
+        return bool(self.settings.get("seed_counts_done", False))
 
     # ── 第二版索引（文字层候选过滤） ───────────────────────
     def _index_file(self) -> Path:

@@ -619,17 +619,20 @@
     if (!text) return
     const vol = currentVolume
     const inVol = (p) => !vol || p.volume === vol
-    // 先在本卷里找页码，避免跳到别的分卷同号页
+    const numeric = /^\d+$/.test(text)
+    // 只在本卷里找：跨卷同号容易跳错册，换册用上面的分卷下拉
     const found =
       pages.find((p) => inVol(p) && String(p.printed_page) === text) ||
       pages.find((p) => p.id === text) ||
-      pages.find((p) => inVol(p) && `${p.label}`.includes(text)) ||
-      pages.find((p) => String(p.printed_page) === text)
+      (numeric ? undefined : pages.find((p) => inVol(p) && `${p.label}`.includes(text)))
     if (found) {
       gotoText = ''
       await openPage(found)
     } else {
-      error = `找不到「${text}」`
+      const inVolume = pages.filter(inVol)
+      const nums = inVolume.map((p) => Number(p.printed_page)).filter((n) => Number.isFinite(n))
+      const span = nums.length ? `，本册只开放第 ${Math.min(...nums)}–${Math.max(...nums)} 页` : ''
+      error = numeric ? `没有第 ${text} 页${span}` : `找不到「${text}」`
     }
   }
 
