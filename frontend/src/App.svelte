@@ -337,8 +337,10 @@
   }
 
   async function writePage(id, { manual = false } = {}) {
+    // 冲突时拒绝写；没有待写改动不算失败——「标记完成」这类调用要能继续走下去
+    if (conflicts.has(id)) return false
     const list = pending[id]
-    if (!list || conflicts.has(id)) return false
+    if (!list) return true
     const seq = dirtySeq.get(id) || 0
     const size = pageSizes.get(id) || { width: 0, height: 0 }
     saveState = 'saving'
@@ -818,13 +820,13 @@
       dark = !dark
     } else if (event.key.toLowerCase() === 'a') {
       event.preventDefault()
-      snapConnectedAll()
+      refitAll()
     }
   }
 
   function keyup(event) {
     if (event.key === 'Shift') {
-      if (shiftOnly) refitAll()
+      if (shiftOnly) snapConnectedAll()
       shiftOnly = false
     }
   }
@@ -1078,7 +1080,7 @@
           <button
             onclick={snapConnectedAll}
             disabled={!boxes.length}
-            title="按墨迹连通块把本页每个框贴成「一个连通字」（快捷键 A）"
+            title="按墨迹连通块把本页每个框贴成「一个连通字」（单按 Shift）"
           >
             连通吸附
           </button>
@@ -1168,8 +1170,8 @@
         <span class="kbd">←</span><span class="kbd">→</span><span class="kbd">↑</span><span class="kbd">↓</span>
         微调 1px（<span class="kbd">Shift</span> 为 10px）<br />
         <span class="kbd">Delete</span> 删除 · <span class="kbd">Tab</span> 下一个框 ·
-        <span class="kbd">F</span> 贴合墨迹 · 单按 <span class="kbd">Shift</span> 本页全部重贴 ·
-        <span class="kbd">A</span> 本页连通吸附<br />
+        <span class="kbd">F</span> 贴合墨迹 · 单按 <span class="kbd">Shift</span> 本页连通吸附 ·
+        <span class="kbd">A</span> 本页全部重贴<br />
         空白处按住拖动 = 拉一个新框（松手自动吸附）
       </div>
 
