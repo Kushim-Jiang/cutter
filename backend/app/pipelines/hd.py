@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import csv
 import json
+import time
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -29,8 +30,9 @@ from ..core.box import Box
 from .base import DetectResult, Pipeline, param
 from .upstream import hd_heads, hd_v2
 
-# {源文件: {1 基 PDF 页: [(col, x, y, w, h)]}}，来自 hd1-heads.ndjson（300dpi 坐标）
-_SEED_CACHE: dict[str, dict[int, list[tuple[int, int, int, int, int]]]] = {}
+# {"源文件": (读取时刻, {1 基 PDF 页: [(col, x, y, w, h)]})}，来自 hd1-heads.ndjson（300dpi 坐标）
+_SEED_CACHE: dict[str, tuple[float, dict[int, list[tuple[int, int, int, int, int]]], dict[int, str]]] = {}
+SEED_TTL = 60.0
 # {csv 路径: {页: [字头…]}}，来自 hd2.csv
 _INDEX_CACHE: dict[str, dict[int, list[str]]] = {}
 SEED_DPI = 300.0
@@ -276,13 +278,20 @@ class HdPipeline(Pipeline):
         return self._seed_dir() / "hd1-pred.ndjson"
 
     def _seed_index(self) -> dict[int, list[tuple[int, int, int, int, int]]]:
-        files = (self._seed_file(), self.pred_file())
+        # 预测框优先：它是用修好的版面法重跑的，比上游那份旧定稿更准；
+        # 预测文件没覆盖到的页才退回上游定稿。
+        files = (self.pred_file(), self._seed_file())
         key = "|".join(str(p) for p in files)
-        if key in _SEED_CACHE:
-            return _SEED_CACHE[key]
+        # 预测文件是慢慢生成的：隔一会儿重读一次，别让刚跑出来的页看不见，
+        # 也别每个请求都去解析 5 万行。
+        cached = _SEED_CACHE.get(key)
+        if cached and time.time() - cached[0] < SEED_TTL:
+            self._seed_sources = cached[2]
+            return cached[1]
 
         grouped: dict[int, list[tuple[int, int, int, int, int]]] = {}
-        # 上游定稿优先；预测文件只补定稿里没有的页
+        sources: dict[int, str] = {}
+        # 前面的文件优先，后面的文件只补前面没有的页
         for rank, path in enumerate(files):
             if not path.is_file():
                 continue
@@ -304,10 +313,19 @@ class HdPipeline(Pipeline):
                         continue
                     col = int(row.get("col", 0) or 0)
                     grouped.setdefault(pno, []).append((col, x, y, w, h))
+                    sources.setdefault(pno, "predict" if rank == 0 else "upstream")
         for rows in grouped.values():
             rows.sort(key=lambda r: (r[0], r[2], r[1]))
-        _SEED_CACHE[key] = grouped
+        _SEED_CACHE[key] = (time.time(), grouped, sources)
         return grouped
+
+    def seed_kind(self, page_id: str) -> str:
+        """这一页的框是从上游定稿来的（upstream）还是本工具预测的（predict）。"""
+        volume, pno = self._split(page_id)
+        if volume["vol"] != "1":
+            return ""
+        self._seed_index()
+        return getattr(self, "_seed_sources", {}).get(pno, "")
 
     def seed_boxes(self, page_id: str) -> tuple[list[Box], dict[str, Any]] | None:
         volume, pno = self._split(page_id)
@@ -317,7 +335,8 @@ class HdPipeline(Pipeline):
         if not rows:
             return None
         boxes = [Box(x=x, y=y, w=w, h=h, seq=i) for i, (_col, x, y, w, h) in enumerate(rows, 1)]
-        return boxes, {"seed": "hd1-heads", "volume": volume["vol"], "page": pno, "dpi": self.dpi()}
+        kind = self.seed_kind(page_id) or "upstream"
+        return boxes, {"seed": kind, "volume": volume["vol"], "page": pno, "dpi": self.dpi()}
 
     def seed_done(self, page_id: str) -> bool:
         volume, pno = self._split(page_id)

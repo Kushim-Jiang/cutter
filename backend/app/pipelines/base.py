@@ -92,6 +92,10 @@ class Pipeline:
         """
         return True
 
+    def seed_kind(self, page_id: str) -> str:
+        """这一页的预置框是从哪来的（各书源自定义，界面用来区分「定稿/预测」）。"""
+        return "upstream" if self.seed_done(page_id) else ""
+
     def first_seeded_page(self, page_ids: list[str]) -> str | None:
         """第一个有定稿数据的页（界面打开书籍时直接落在这一页）。"""
         for page_id in page_ids:

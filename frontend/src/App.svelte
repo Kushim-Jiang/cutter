@@ -995,7 +995,16 @@
       {:else}
         <span class="pill ok" title={savedAt ? `上次写盘 ${savedAt}` : '没有待写改动'}>已写盘</span>
       {/if}
-      {#if meta?.seeded}<span class="pill ok" title="本页用的是上游已切好的定稿数据">定稿</span>{/if}
+      {#if meta?.seeded}
+        <span
+          class="pill ok"
+          title={meta.seed_kind === 'predict'
+            ? '本页只有本工具跑出来的预测框（还没人工校过）'
+            : '本页用的是上游已切好的定稿数据'}
+        >
+          {meta.seed_kind === 'predict' ? '预测' : '定稿'}
+        </span>
+      {/if}
       <span class="prog" title="本页完成后会记在服务端">{doneIds.size}/{pages.length} 完成</span>
       <span class="stat">本页 {boxes.length} 个框</span>
     </section>

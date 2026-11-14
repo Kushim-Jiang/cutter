@@ -74,9 +74,11 @@ async def page_meta(book: str, page: str) -> dict[str, Any]:
     saved = store.load_boxes(book, page)
     state = (saved or {}).get("state", {})
     seeded = False
+    seed_kind = ""
     if not saved and config.load_settings().get("use_seed", True):
         try:
             seeded = await run_in_threadpool(pipeline.seed_done, page)
+            seed_kind = await run_in_threadpool(pipeline.seed_kind, page) if seeded else ""
         except Exception:
             seeded = False
     return {
@@ -86,6 +88,7 @@ async def page_meta(book: str, page: str) -> dict[str, Any]:
         "done": bool(state.get("done")) or (seeded and pipeline.seed_counts_done()),
         "suspect": bool(state.get("suspect")),
         "seeded": seeded,
+        "seed_kind": seed_kind,
     }
 
 
