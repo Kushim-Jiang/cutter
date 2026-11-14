@@ -399,12 +399,18 @@ aside.side {
   user-select: none;
 }
 
+/* 展开后自己滚：details 的内容包在匿名盒里，撑给父级的高度限不住它，
+   所以直接给内容块一个明确的高度上限，滚动条只出现在这一块。 */
 .side-more[open] {
-  max-height: 55%;
+  flex: 0 1 auto;
+  overflow: hidden;
 }
 
 .side-more > .side-body {
   border-top: 1px solid var(--line);
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 45vh;
 }
 
 aside h3 {

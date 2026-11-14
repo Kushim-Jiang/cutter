@@ -46,6 +46,7 @@
 
   const GROW_SLACK = 0.15
   const SNAP_PAD = 2
+  const SNAP_TOL = 10 // 屏幕 px：光标离墨迹这么近才吸附（按页面 px 算会随缩放失真）
   const OWN_FIT = 0.5      // 连通块外接框有一半以上在框内 → 归这个框
   const OWN_MIN = 0.15     // 一个都不满足时，退而取重叠最多的那块（至少 15%）
   const COMP_MIN_AREA = 6  // 比这还小的当纸纹
@@ -325,6 +326,20 @@
     return true
   }
 
+  /** 光标是否真的贴着这条边（按屏幕距离算，缩放多少都是「差不多 10px」）。
+   *
+   * 吸附只在光标靠近墨迹时才生效：否则拖边会被「框内连通块」按回原来的位置，
+   * 表现就是这条边怎么拖都不动。
+   */
+  function nearEdge(b, edges, p) {
+    const tol = SNAP_TOL / Math.max(k(), 1e-6)
+    if (edges.includes('l') && Math.abs(b.x - p.x) > tol) return false
+    if (edges.includes('r') && Math.abs(b.x + b.w - p.x) > tol) return false
+    if (edges.includes('t') && Math.abs(b.y - p.y) > tol) return false
+    if (edges.includes('b') && Math.abs(b.y + b.h - p.y) > tol) return false
+    return true
+  }
+
   function colCount(x, y0, y1) {
     if (x < 0 || x >= maskW) return 0
     y0 = Math.max(0, y0)
@@ -546,7 +561,7 @@
     const H2 = b.h * kk
     const mx = p.x * kk
     const my = p.y * kk
-    const t = 9
+    const t = Math.max(3, Math.min(9, Math.min(W2, H2) / 3))
     const nL = Math.abs(mx - X) < t
     const nR = Math.abs(mx - (X + W2)) < t
     const nT = Math.abs(my - Y) < t
@@ -667,7 +682,15 @@
         if (m.includes('e')) e.push('r')
         if (m.includes('n')) e.push('t')
         if (m.includes('s')) e.push('b')
-        if (!snapConnected(b, e, drag.orig)) snapEdges(b, e)
+        // 先试「框内连通块」，光标没贴上去就让它跟着光标走
+        const probe = { ...b }
+        if (snapConnected(probe, e, drag.orig) && nearEdge(probe, e, p)) {
+          Object.assign(b, probe)
+        } else {
+          const near = { ...b }
+          snapEdges(near, e)
+          if (nearEdge(near, e, p)) Object.assign(b, near)
+        }
       }
       markEdited(drag.i)
     }

@@ -1158,8 +1158,8 @@
       <h3>操作</h3>
       <div class="hint">
         框有 <b>8 个手柄</b>（四角 + 四边中点）：拖角＝两边一起动，拖边＝只动一边<br />
-        拖动时<b>连通吸附</b>：每条边只会停在框内连通块（同一字的笔画并集）的外接框上，
-        按住 <span class="kbd">Alt</span> 临时关掉<br />
+        拖动时<b>连通吸附</b>：边拖到离墨迹（同一字的笔画并集）10px 以内才吸附上去，
+        其余时候跟着光标走；按住 <span class="kbd">Alt</span> 完全不吸附<br />
         <b>滚轮</b>＝上下滚动 · <b>Alt+滚轮</b>＝以光标为中心缩放 · <b>中键/Space</b> 拖动＝平移<br />
         <span class="kbd">Ctrl</span>+<span class="kbd">Z</span> 撤销 ·
         <span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">Z</span> 重做<br />
