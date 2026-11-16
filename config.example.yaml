@@ -28,10 +28,18 @@ books:
   zihai:
     pdf: ""            # 卷 1 = 中华字海1a.pdf
     volumes:
+      # offset / first_page / last_page 都是 PDF 页号（1 基）；印刷页 = PDF 页 - offset。
+      # 两卷的 offset 不一样（卷 1 = 83，卷 2 = 79），漏写就会整页框位错开。
       "1":
         pdf: ""
+        offset: 83
+        first_page: 84
+        last_page: 1864
       "2":
         pdf: ""        # 卷 2 = 中华字海2.pdf
+        offset: 79
+        first_page: 80
+        last_page: 1860
 
   # 汉字海
   hzh:

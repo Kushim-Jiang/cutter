@@ -3,8 +3,9 @@
 算法与上游逐条一致，仅去掉对 `hd_common`（项目路径、OCR、CLI）的依赖：
 
     1. 在 1/shrink 分辨率上做连通域（大核膨胀在 300dpi 上太慢）；
-    2. 正文中位字高取 40..100px 的块（分析图分辨率）；
-    3. 大字候选 = 高 >= min_ratio × 正文，且边长、宽高比在范围内；
+    2. 正文中位字高取全分布众数（正文总是页面上出现次数最多的字块）；
+    3. 大字候选 = 高 >= min_ratio × 正文，同一行被拆开的左右两半先并回一个字，
+       再把宽/高超上限的块沿空白切开，最后才按边长、宽高比筛选；
     4. 按竖投影在中部找订口切成左右两栏；
     5. **每栏只保留最左一列**（字头一律起栏，古文字形示例在栏内向右排开）。
 """
@@ -91,41 +92,106 @@ def body_height(probe: list[tuple[int, int, int, int]], fallback_shape: tuple[in
     return Counter(heights).most_common(1)[0][0]
 
 
-def trim_wide(mask, box: tuple[int, int, int, int], max_w: int) -> tuple[int, int, int, int]:
-    """把「字头 + 后面的注音/释文被膨胀粘在一起」的宽块，切回字头。
-
-    字头后面常常紧跟小字注音，k×k 膨胀会把两者并成一个宽块，
-    宽到超出 `max_side` 就被整块丢掉（p774 这一页因此丢了 5 个字头）。
-
-    切口要挑「宽度接近字头、而且空白足够宽」的那一处——汉字内部本来就有空列，
-    随便切一刀会把一个字劈成两半（p868 就被切成了 96px 宽的半拉字）。
-    """
+def _tighten(mask: np.ndarray, box: tuple[int, int, int, int]) -> tuple[int, int, int, int] | None:
+    """把框收紧到框内真实墨迹的外接框（和图块取出时做的收紧同一件事）。"""
     x, y, w, h = box
-    if w <= max_w:
-        return box
+    if w <= 0 or h <= 0:
+        return None
     sub = mask[y : y + h, x : x + w]
-    col_ink = sub.sum(axis=0)
-    min_gap = max(3, int(max_w * 0.05))
-    lo = max(1, int(max_w * 0.5))
-    hi = min(w, int(max_w * 1.6))
-    best_cut, best_score = -1, 1e9
-    i = lo
-    while i < hi:
-        if col_ink[i] == 0:
+    ys, xs = np.flatnonzero(sub.any(axis=1)), np.flatnonzero(sub.any(axis=0))
+    if ys.size == 0:
+        return None
+    return (int(x + xs[0]), int(y + ys[0]), int(xs[-1] - xs[0] + 1), int(ys[-1] - ys[0] + 1))
+
+
+def _gaps(prof: np.ndarray, min_gap: int) -> list[tuple[int, int]]:
+    """投影里的空白段：返回 [(空白起点, 空白宽度)]。"""
+    out: list[tuple[int, int]] = []
+    n = prof.size
+    i = 1
+    while i < n:
+        if prof[i] == 0:
             start = i
-            while i < w and col_ink[i] == 0:
+            while i < n and prof[i] == 0:
                 i += 1
             run = i - start
             if run >= min_gap:
-                width = start
-                score = abs(width - max_w) - run  # 越接近字头宽度、空白越宽越好
-                if width >= max(10, int(max_w * 0.4)) and score < best_score:
-                    best_score, best_cut = score, start
+                out.append((start, run))
         else:
             i += 1
-    if best_cut > 0:
-        return (x, y, best_cut, h)
-    return box
+    return out
+
+
+def _cut(
+    mask: np.ndarray,
+    box: tuple[int, int, int, int],
+    axis: str,
+    limit: int,
+    target: int,
+) -> int:
+    """在 `axis` 方向找一条最像「字头边界」的空白缝，返回切点（相对框起点），没有就 0。"""
+    x, y, w, h = box
+    size = w if axis == "x" else h
+    if size <= limit:
+        return 0
+    sub = mask[y : y + h, x : x + w]
+    prof = sub.sum(axis=0) if axis == "x" else sub.sum(axis=1)
+    lo = max(10, int(limit * 0.15))
+    # 字头后面的注音、旁边的字形示例离得很近，空白只有十来个像素：
+    # 门槛按比例取（字头宽的 3%），比固定 5% 更容易切对 p1316 那种 5 列的窄缝。
+    min_gap = max(2, int(min(target, limit) * 0.03))
+    best_cut, best_score = 0, 1e9
+    for pos, run in _gaps(prof, min_gap):
+        if pos < lo or size - pos < lo:
+            continue
+        score = abs(pos - target) - run * 2  # 越接近字头尺寸、空白越宽越好
+        if score < best_score:
+            best_score, best_cut = score, pos
+    return best_cut
+
+
+def split_overlong(
+    mask: np.ndarray,
+    box: tuple[int, int, int, int],
+    limit: int,
+    ref_w: int,
+    ref_h: int,
+    depth: int = 0,
+) -> list[tuple[int, int, int, int]]:
+    """把超出上限（`limit`）的块沿空白处切开，直到每块都装得下字头。
+
+    膨胀核会把「字头 + 紧跟的小字注音」「字头 + 旁边的古文字形示例」粘成一块，
+    宽或高超出上限就整块丢掉（p774 丢 5 个字头、p1346 那个女+夾连字形示例
+    粘成 448×446 的块）。切开后每一块都收紧到墨迹，继续参与正常筛选。
+    """
+    x, y, w, h = box
+    if w <= limit and h <= limit:
+        return [box]
+    if depth >= 3:
+        return []
+    best: tuple[float, str, int] | None = None
+    for axis in ("x", "y"):
+        target = ref_w if axis == "x" else ref_h
+        cut = _cut(mask, box, axis, limit, target)
+        if cut <= 0:
+            continue
+        score = abs(cut - target)
+        if best is None or score < best[0]:
+            best = (score, axis, cut)
+    if best is None:
+        return []
+    _, axis, cut = best
+    if axis == "x":
+        parts = [(x, y, cut, h), (x + cut, y, w - cut, h)]
+    else:
+        parts = [(x, y, w, cut), (x, y + cut, w, h - cut)]
+    out: list[tuple[int, int, int, int]] = []
+    for part in parts:
+        tight = _tighten(mask, part)
+        if tight is None:
+            continue
+        out.extend(split_overlong(mask, tight, limit, ref_w, ref_h, depth + 1))
+    return out
 
 
 def merge_row_parts(
@@ -159,6 +225,13 @@ def merge_row_parts(
     return out
 
 
+def column_tolerance(inside: list[tuple[int, int, int, int]]) -> int:
+    """同一列允许的左边界抖动（字头宽度的 60%）。"""
+    if not inside:
+        return 10
+    return max(10, int(sorted(b[2] for b in inside)[len(inside) // 2] * 0.60))
+
+
 def leftmost_column(inside: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:
     """每栏只留最左一列（字头一律起栏，古文字形示例向右排开）。
 
@@ -166,10 +239,12 @@ def leftmost_column(inside: list[tuple[int, int, int, int]]) -> list[tuple[int, 
     就能把整栏字头顶掉。所以加了兜底：只有当这一列只剩零星几个块时，
     才改用「最宽的那批块」定左边界——字头在一页上总是最大的。
     """
-    widths = sorted(b[2] for b in inside)
+    if not inside:
+        return []
     # 容差按字头宽度的 60%：字头之间本身就有 ±15px 的左边界抖动，
     # 上游取 25% 时同一栏里靠右的几个会被判成「缩进」而丢掉。
-    tol = max(10, int(widths[len(widths) // 2] * 0.60))
+    tol = column_tolerance(inside)
+    widths = sorted(b[2] for b in inside)
     xmin = min(b[0] for b in inside)
     base = [b for b in inside if b[0] - xmin <= tol]
     if base:
@@ -219,47 +294,75 @@ def detect(
     k = max(7, int(round(body_h * 0.16)) | 1)
 
     limit = max_side // shrink
-    comps = components(mask, k)
-    big = [
-        b
-        for b in comps
-        if min_ratio * body_h <= b[3] <= limit
-        and 45 <= b[2] <= limit
-        and 0.5 <= b[2] / max(b[3], 1) <= 1.9
-    ]
-    # 超宽的块多半是「字头 + 紧跟的小字注音」被膨胀粘在一起：在空白处切回字头。
-    wide = [
-        b
-        for b in comps
-        if min_ratio * body_h <= b[3] <= limit
-        and b[2] > limit
-        and 0.5 <= b[2] / max(b[3], 1) <= 4.0
-    ]
-    if wide:
+    # 只看「比正文大的块」：字头、古文字形示例、被膨胀粘在一起的碎片都在里面。
+    # 先并合左右两半再筛选——分开的半个字各自都不合格（宽高比 < 0.5），
+    # p1320 的「女 + 比」就是这样整块漏掉的。
+    tall = [b for b in components(mask, k) if b[3] >= min_ratio * body_h]
+    tall = merge_row_parts(tall, limit)
+
+    def accept(b: tuple[int, int, int, int]) -> bool:
+        return (
+            min_ratio * body_h <= b[3] <= limit
+            and 45 <= b[2] <= limit
+            and 0.5 <= b[2] / max(b[3], 1) <= 1.9
+        )
+
+    big = [b for b in tall if accept(b)]
+    # 超宽或超高的块多半是「字头 + 紧跟的小字注音 / 旁边的字形示例」被膨胀粘住：
+    # 在空白处切开，切出来的每一块收紧到墨迹后再按正常条件参与筛选。
+    # 切出来的块单独放着——它们只能补进「原生块已经定好的那一列」，
+    # 不能反过来当锚点（碎片往左一挪，整栏字头就全被判成缩进丢掉）。
+    parts: list[tuple[int, int, int, int]] = []
+    over = [b for b in tall if b[2] > limit or b[3] > limit]
+    if over:
         ref_w = int(sorted(b[2] for b in big)[len(big) // 2]) if big else int(limit * 0.75)
-        for b in wide:
-            trimmed = trim_wide(mask, b, ref_w)
-            if trimmed[2] <= limit:
-                big.append(trimmed)
+        ref_h = int(sorted(b[3] for b in big)[len(big) // 2]) if big else int(limit * 0.75)
+        # 整片图版、密集注文、书眉横线会连成比字头大几十倍的大块，切开只会得到碎片
+        # （p1355 那页右栏就被这种 1671×646 的块带偏）。只切「大致是字头 + 邻块」的量级。
+        max_area = 6 * ref_w * ref_h
+        for b in over:
+            if b[2] * b[3] > max_area:
+                continue
+            for part in split_overlong(mask, b, limit, ref_w, ref_h):
+                if accept(part):
+                    parts.append(part)
     if footer < 1.0 or edge > 0.0:
         mh, mw = mask.shape
-        big = [
-            b
-            for b in big
-            if (b[1] + b[3] / 2) <= footer * mh and b[0] >= edge * mw and b[0] + b[2] <= (1 - edge) * mw
-        ]
+
+        def in_body(b: tuple[int, int, int, int]) -> bool:
+            return (
+                (b[1] + b[3] / 2) <= footer * mh
+                and b[0] >= edge * mw
+                and b[0] + b[2] <= (1 - edge) * mw
+            )
+
+        big = [b for b in big if in_body(b)]
+        parts = [b for b in parts if in_body(b)]
     big = dedupe(big)
+    if parts:
+        # 切出来的块只在没被原生块覆盖时才算数
+        keep = dedupe(big + parts)
+        prim = set(big)
+        parts = [b for b in keep if b not in prim]
 
     blocks = [(a // shrink, b // shrink) for a, b in column_blocks(mask, shrink)]
     heads: list[tuple[int, int, int, int]] = []
     cols: list[int] = []
     for ci, (bx0, bx1) in enumerate(blocks):
         inside = [b for b in big if bx0 <= b[0] + b[2] / 2 <= bx1]
-        if not inside:
+        frags = [b for b in parts if bx0 <= b[0] + b[2] / 2 <= bx1]
+        kept = leftmost_column(inside)
+        if kept:
+            # 切出来的块补进这一列：左边界要落在锚点附近，否则当碎片丢掉
+            tol = column_tolerance(inside)
+            anchor = sorted(b[0] for b in kept)[len(kept) // 2]
+            kept = kept + [b for b in frags if abs(b[0] - anchor) <= tol]
+        elif frags:
+            kept = leftmost_column(frags)
+        if not kept:
             continue
-        for b in leftmost_column(inside):
-            heads.append(b)
-            cols.append(ci)
+        heads.extend(kept)
+        cols.extend([ci] * len(kept))
 
     if heads:
         merged = merge_row_parts(heads, limit)

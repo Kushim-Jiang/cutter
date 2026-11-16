@@ -179,16 +179,46 @@ def test_hd_leftmost_column_keeps_upstream_behaviour_when_clean():
     assert sorted(kept) == sorted(left)
 
 
-def test_hd_trim_wide_splits_head_from_note():
+def test_hd_split_overlong_cuts_head_from_note():
     """字头后面紧跟小字注音时，膨胀会把两者粘成一个宽块；超宽块要在空白处切回字头。"""
     from app.pipelines.upstream import hd_heads
 
     mask = np.zeros((60, 300), np.uint8)
     mask[10:50, 5:55] = 1  # 字头
     mask[10:50, 80:280] = 1  # 右侧连着的注文（中间 25 列空白）
-    trimmed = hd_heads.trim_wide(mask, (0, 0, 300, 60), max_w=80)
-    assert trimmed[2] <= 80
-    assert trimmed[0] == 0 and trimmed[1] == 0
+    parts = hd_heads.split_overlong(mask, (0, 0, 300, 60), limit=80, ref_w=50, ref_h=40)
+    assert parts
+    head = min(parts, key=lambda p: p[0])
+    assert head[0] == 5 and head[2] <= 80
+
+
+def test_hd_split_overlong_cuts_narrow_gap():
+    """字头后的注音离得很近时空白只有十来列，也要能切开（p1316 的 5 列窄缝）。"""
+    from app.pipelines.upstream import hd_heads
+
+    mask = np.zeros((60, 200), np.uint8)
+    mask[10:50, 5:55] = 1
+    mask[10:50, 60:200] = 1  # 只隔 5 列
+    parts = hd_heads.split_overlong(mask, (0, 0, 200, 60), limit=80, ref_w=50, ref_h=40)
+    assert parts and min(p[0] for p in parts) == 5
+
+
+def test_hd_layout_detect_joins_split_glyph():
+    """同一个字被拆成左右两半（各自宽高比都不合规）时，先并合再筛选才检得出来。"""
+    from app.pipelines.upstream import hd_heads
+
+    ink = np.zeros((600, 400), np.uint8)
+    for y in (300, 400, 500):
+        for x in range(20, 380, 40):
+            ink[y : y + 26, x : x + 26] = 1
+    for y in (60, 180):
+        ink[y : y + 100, 60:88] = 1
+        ink[y : y + 100, 96:126] = 1
+    gray = imaging.ink_to_gray(ink)
+    found = hd_heads.detect(gray, shrink=1)
+    widths = sorted(c["box"][2] for c in found["cands"])
+    assert len(found["cands"]) == 2
+    assert widths[-1] > 60  # 两半并回了一个字
 
 
 def test_hd_merge_row_parts_joins_split_glyph():
